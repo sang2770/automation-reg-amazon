@@ -256,34 +256,55 @@ def register_amazon(username, sdt, address, proxy, shopgmail_api):
         driver.get("https://www.amazon.com/ax/account/manage?openid.return_to=https%3A%2F%2Fwww.amazon.com%2Fyour-account%3Fref_%3Dya_cnep&openid.assoc_handle=anywhere_v2_us&shouldShowPasskeyLink=true&passkeyEligibilityArb=23254432-b9cb-4b93-98b6-ba9ed5e45a65&passkeyMetricsActionId=07975eeb-087d-42ab-971d-66c2807fe4f5")
         
         # Kích hoạt 2FA
-        WebDriverWait(driver, 10).until(EC.element_to_be_clickable((By.XPATH, "//input[@type='radio' and @value='SMS']"))).click()
-        driver.find_element(By.ID, "auth-mfa-remember-device").click()
-        driver.find_element(By.ID, "auth-continue").click()
+        WebDriverWait(driver, 10).until(EC.element_to_be_clickable((By.ID, "TWO_STEP_VERIFICATION_BUTTON"))).click()
         
-        # Nhập OTP 2FA
+        # get OTP again
         otp_2fa = shopgmail_api.get_otp(orderid)
+        if not otp_2fa:
+            logger.error(f"CẢNH BÁO: Không lý OTP 2FA cho {email}")
+            log_failed_account(email, "captcha.txt")
+            return False
+        
+        otp_field_2fa = driver.find_element(By.ID, "otp_submit_form")
+        human_type(otp_field_2fa, otp_2fa)
+        driver.find_element(By.ID, "cvf-submit-otp-button").click()
+        
+        # Kiểm tra CAPTCHA lần nữa
+        if not handle_captcha(driver, email):
+            log_failed_account(email, "captcha.txt")
+            return False
+        # Id cvf-submit-otp-button
+        driver.find_element(By.ID, "sia-otp-accordion-totp-header").click()
+        # get sia-auth-app-formatted-secret
+        backup_code = driver.find_element(By.ID, "sia-auth-app-formatted-secret").text
+        
+        # get 2fa OTP code from secret
+        otp_2fa = "...." # TODO
         if not otp_2fa:
             logger.error(f"CẢNH BÁO: Không lấy được OTP 2FA cho {email}")
             log_failed_account(email, "captcha.txt")
             return False
         
-        otp_field_2fa = WebDriverWait(driver, 10).until(EC.presence_of_element_located((By.ID, "auth-mfa-otpcode")))
+        otp_field_2fa = WebDriverWait(driver, 10).until(EC.presence_of_element_located((By.ID, "ch-auth-app-code-input")))
         human_type(otp_field_2fa, otp_2fa)
-        driver.find_element(By.ID, "auth-signin-button").click()
+        driver.find_element(By.ID, "ch-auth-app-submit-button").click()
         
         # Kiểm tra CAPTCHA lần nữa
         if not handle_captcha(driver, email):
             log_failed_account(email, "captcha.txt")
             return False
         
-        # Sao chép mã dự phòng 2FA
-        backup_code = WebDriverWait(driver, 10).until(EC.presence_of_element_located((By.XPATH, "//span[contains(@class, 'backup-code')]"))).text
-        if not backup_code:
-            logger.error(f"CẢNH BÁO: Không lấy được mã dự phòng 2FA cho {email}")
+        # Confirm button enable-mfa-form-submit
+        driver.find_element(By.ID, "enable-mfa-form-submit").click()
+        
+        # Kiểm tra CAPTCHA lần nữa
+        if not handle_captcha(driver, email):
+            log_failed_account(email, "captcha.txt")
             return False
+
         
         # Điều hướng đến sổ địa chỉ
-        driver.get("https://www.amazon.com/gp/aw/address-book?ref_=aw_ya_hp_manage_address")
+        driver.get("https://www.amazon.com/a/addresses/add?ref=ya_address_book_add_button")
         
         # Thêm địa chỉ
         try:
@@ -298,9 +319,8 @@ def register_amazon(username, sdt, address, proxy, shopgmail_api):
             if len(address_lines) > 1:
                 driver.find_element(By.ID, "address-ui-widgets-enterAddressLine2").send_keys(address_lines[1])
             driver.find_element(By.ID, "address-ui-widgets-enterAddressCity").send_keys(address_lines[-3])
-            driver.find_element(By.ID, "address-ui-widgets-enterAddressStateOrRegion").send_keys(address_lines[-2])
+            driver.find_element(By.ID, "address-ui-widgets-enterAddressStateOrRegion").send_keys(address_lines[-2]) # Select
             driver.find_element(By.ID, "address-ui-widgets-enterAddressPostalCode").send_keys(address_lines[-1])
-            driver.find_element(By.ID, "address-ui-widgets-enterAddressCountryCode").send_keys("US")
             driver.find_element(By.ID, "address-ui-widgets-form-submit-button").click()
             
             # Lưu tài khoản thành công
