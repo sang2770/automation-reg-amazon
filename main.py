@@ -1,0 +1,358 @@
+import time
+import random
+import requests
+import string
+from concurrent.futures import ThreadPoolExecutor
+from selenium import webdriver
+from selenium.webdriver.common.by import By
+from selenium.webdriver.support.ui import WebDriverWait
+from selenium.webdriver.support import expected_conditions as EC
+from selenium.webdriver.chrome.options import Options
+from log import logger
+
+
+# GemLogin API client
+class GemLoginAPI:
+    def __init__(self):
+        self.base_url = "http://localhost:1010"
+        self.session = requests.Session()
+
+    def create_profile(self, proxy, profile_name="AmazonProfile"):
+        # Tạo cấu hình mới với proxy SOCKS5 và hệ điều hành Android
+        payload = {
+            "profile_name": profile_name,
+            "group_name": "All",
+            "raw_proxy": f"socks5://{proxy}",
+            "startup_urls": ["https://www.amazon.com/amazonprime"],
+            "is_noise_canvas": True,
+            "is_noise_webgl": True,
+            "is_noise_client_rect": True,
+            "is_noise_audio_context": True,
+            "is_random_screen": True,
+            "is_masked_webgl_data": True,
+            "is_masked_media_device": True,
+            "os": {"type": "Android", "version": "11"},  # Emulate Android 11
+            "webrtc_mode": 1,  # Tắt WebRTC
+            "browser_version": "135",
+            "language": "en",
+            "time_zone": "Asia/Bangkok",
+            "country": "Vietnam",
+            "user_agent": "Mozilla/5.0 (Linux; Android 11; SM-G998B Build/RP1A.200720.012; wv) AppleWebKit/537.36 (KHTML, like Gecko) Version/4.0 Chrome/136.0.5528.74 Mobile Safari/537.36"
+        }
+        response = self.session.post(f"{self.base_url}/api/profiles/create", json=payload)
+        if response.status_code == 200 and response.json().get("success"):
+            return response.json().get("data", {}).get("id")
+        logger.error(f"CẢNH BÁO: Không tạo được cấu hình với proxy {proxy}")
+        return None
+
+    def start_profile(self, profile_id):
+        # Khởi động trình duyệt cho cấu hình
+        response = self.session.get(f"{self.base_url}/api/profiles/start/{profile_id}")
+        if response.status_code == 200 and response.json().get("success"):
+            return response.json().get("data", {})
+        logger.error(f"CẢNH BÁO: Không khởi động được cấu hình {profile_id}")
+        return None
+
+    def close_profile(self, profile_id):
+        # Đóng trình duyệt
+        self.session.get(f"{self.base_url}/api/profiles/close/{profile_id}")
+
+    def delete_profile(self, profile_id):
+        # Xóa cấu hình
+        response = self.session.get(f"{self.base_url}/api/profiles/delete/{profile_id}")
+        if response.status_code == 200 and response.json().get("success"):
+            return True
+        logger.error(f"CẢNH BÁO: Không xóa được cấu hình {profile_id}")
+        return False
+
+# ShopGmail9999 API client
+class ShopGmailAPI:
+    def __init__(self, apikey):
+        self.base_url = "https://api.shopgmail9999.com/api/ApiV2"
+        self.apikey = apikey
+        self.session = requests.Session()
+
+    def create_gmail_account(self):
+        # Tạo Gmail mới bằng API CreateOrder
+        api_url = f"{self.base_url}/CreateOrder"
+        params = {
+            "apikey": self.apikey,
+            "service": "amazon"
+        }
+        try:
+            response = self.session.get(api_url, params=params)
+            if response.status_code == 200:
+                data = response.json()
+                if data.get("status") == "success":
+                    email = data.get("data", {}).get("email")
+                    orderid = data.get("data", {}).get("orderid")
+                    if email and orderid:
+                        logger.info(f"THÔNG TIN: Tạo Gmail thành công: {email} (Order ID: {orderid})")
+                        return email, orderid
+                    else:
+                        logger.warning("CẢNH BÁO: Không tìm thấy email hoặc orderid trong phản hồi API")
+                        return None, None
+                else:
+                    logger.warning(f"CẢNH BÁO: Lỗi khi tạo Gmail: {data.get('msg')}")
+                    return None, None
+            else:
+                logger.error(f"CẢNH BÁO: Lỗi khi gọi API CreateOrder: {response.status_code} - {response.text}")
+                return None, None
+        except Exception as e:
+            logger.error(f"CẢNH BÁO: Lỗi khi gọi API CreateOrder: {str(e)}")
+            return None, None
+
+    def get_otp(self, orderid):
+        # Lấy OTP từ CheckOtp2
+        api_url = f"{self.base_url}/CheckOtp2"
+        params = {
+            "apikey": self.apikey,
+            "orderid": orderid,
+            "getbody": False
+        }
+        try:
+            for _ in range(30):  # Thử tối đa 30 lần, cách nhau 5 giây
+                response = self.session.get(api_url, params=params)
+                if response.status_code == 200:
+                    data = response.json()
+                    if data.get("status") == "success" and data.get("data", {}).get("status") == "success":
+                        otp = data.get("data", {}).get("otp")
+                        if otp:
+                            logger.info(f"THÔNG TIN: Lấy OTP thành công: {otp}")
+                            return otp
+                        elif data.get("data", {}).get("status") in ["error-token", "timeout"]:
+                            logger.warning(f"CẢNH BÁO: Lỗi OTP: {data.get('data', {}).get('status')}")
+                            return None
+                time.sleep(5)  # Chờ 5 giây trước khi thử lại
+            logger.warning("CẢNH BÁO: Hết thời gian chờ OTP")
+            return None
+        except Exception as e:
+            logger.error(f"CẢNH BÁO: Lỗi khi gọi API CheckOtp2: {str(e)}")
+            return None
+
+# Hàm kiểm tra CAPTCHA
+def handle_captcha(driver, email):
+    try:
+        # Kiểm tra sự hiện diện của CAPTCHA bằng các yếu tố cụ thể
+        WebDriverWait(driver, 5).until(
+            EC.presence_of_element_located((By.ID, "captcha-container")) or
+            EC.presence_of_element_located((By.ID, "captchacharacters")) or
+            EC.presence_of_element_located((By.ID, "cvfPhoneNumber")) or
+            EC.presence_of_element_located((By.XPATH, "//div[contains(@class, 'a-box') and contains(., 'Enter the characters you see')]"))
+        )
+        logger.warning(f"CẢNH BÁO: Phát hiện CAPTCHA hoặc SDT cho {email}. Xem như lỗi và bỏ qua tài khoản.")
+        return False
+    except Exception:
+        # Không tìm thấy CAPTCHA
+        return True
+
+# Hàm mô phỏng gõ giống con người
+def human_type(element, text):
+    for char in text:
+        element.send_keys(char)
+        time.sleep(random.uniform(0.05, 0.15))
+
+# Hàm đọc dòng từ tệp
+def read_file(file_path):
+    try:
+        with open(file_path, 'r', encoding='utf-8') as f:
+            return [line.strip() for line in f if line.strip()]
+    except FileNotFoundError:
+        logger.warning(f"CẢNH BÁO: Không tìm thấy tệp {file_path}. Chạy mà không dùng dữ liệu từ tệp.")
+        return []
+
+# Hàm lưu chi tiết tài khoản
+def save_account(email, password, tfa_code, file_path="output.txt"):
+    with open(file_path, 'a', encoding='utf-8') as f:
+        f.write(f"{email}|{password}|{tfa_code}\n")
+    logger.info(f"THÔNG TIN: Đã lưu tài khoản {email} vào {file_path}")
+
+# Hàm ghi log tài khoản lỗi
+def log_failed_account(email, file_path):
+    with open(file_path, 'a', encoding='utf-8') as f:
+        f.write(f"{email}\n")
+    logger.warning(f"CẢNH BÁO: Đã ghi tài khoản lỗi {email} vào {file_path}")
+
+# Hàm đăng ký Amazon chính
+def register_amazon(username, sdt, address, proxy, shopgmail_api):
+    gemlogin = GemLoginAPI()
+    
+    # Tạo Gmail mới
+    email, orderid = shopgmail_api.create_gmail_account()
+    if not email or not orderid:
+        logger.error("CẢNH BÁO: Không thể tạo Gmail mới")
+        return False
+    
+    # Tạo cấu hình mới
+    profile_id = gemlogin.create_profile(proxy, f"Profile_{email}")
+    if not profile_id:
+        logger.error(f"CẢNH BÁO: Không tạo được cấu hình cho {email}")
+        return False
+    
+    # Khởi động trình duyệt
+    profile_data = gemlogin.start_profile(profile_id)
+    if not profile_data:
+        logger.error(f"CẢNH BÁO: Không khởi động được cấu hình cho {email}")
+        gemlogin.delete_profile(profile_id)
+        return False
+    
+    remote_debugging_address = profile_data.get("remote_debugging_address")
+    if not remote_debugging_address:
+        logger.error(f"CẢNH BÁO: Không có địa chỉ gỡ lỗi từ xa cho {email}")
+        gemlogin.close_profile(profile_id)
+        gemlogin.delete_profile(profile_id)
+        return False
+    
+    # Thiết lập Selenium với trình duyệt của GemLogin
+    chrome_options = Options()
+    chrome_options.add_experimental_option("debuggerAddress", remote_debugging_address)
+    driver = webdriver.Chrome(options=chrome_options)
+    
+    try:
+        wait = WebDriverWait(driver, 10)
+        # Điều hướng đến Amazon Prime (đã tải qua startup_urls)
+        form = wait.until(EC.presence_of_element_located((By.XPATH, "//form[@action='/gp/prime/pipeline/membersignup']")))
+        join_prime_button = WebDriverWait(form, 10).until(EC.presence_of_element_located((By.XPATH, ".//span[contains(text(), 'Join Prime')]")))
+        join_prime_button.click()
+        
+        # Chọn Tạo tài khoản
+        create_account_button = wait.until(EC.presence_of_element_located((By.ID, "register_accordion_header")))
+        create_account_button.click()
+        # Điền biểu mẫu đăng ký
+        name_field = wait.until(EC.presence_of_element_located((By.ID, "ap_customer_name")))
+        human_type(name_field, username)
+        
+        email_field = driver.find_element(By.ID, "ap_email")
+        human_type(email_field, email)
+        
+        password = ''.join(random.choices(string.ascii_letters + string.digits, k=12))
+        password_field = driver.find_element(By.ID, "ap_password")
+        human_type(password_field, password)
+        
+        driver.find_element(By.ID, "continue").click()
+        
+        # Kiểm tra CAPTCHA
+        if not handle_captcha(driver, email):
+            log_failed_account(email, "captcha.txt")
+            return False
+        
+        # Lấy OTP để xác minh Gmail
+        otp = shopgmail_api.get_otp(orderid)
+        if not otp:
+            logger.error(f"CẢNH BÁO: Không lấy được OTP cho {email}")
+            log_failed_account(email, "captcha.txt")
+            return False
+        
+        otp_field = WebDriverWait(driver, 10).until(EC.presence_of_element_located((By.ID, "cvf-input-code")))
+        human_type(otp_field, otp)
+        driver.find_element(By.CSS_SELECTOR, "input[aria-label='Verify OTP Button']").click()
+        
+        # Kiểm tra CAPTCHA lần nữa
+        if not handle_captcha(driver, email):
+            log_failed_account(email, "captcha.txt")
+            return False
+        
+        # Điều hướng đến thiết lập 2FA
+        driver.get("https://www.amazon.com/ax/account/manage?openid.return_to=https%3A%2F%2Fwww.amazon.com%2Fyour-account%3Fref_%3Dya_cnep&openid.assoc_handle=anywhere_v2_us&shouldShowPasskeyLink=true&passkeyEligibilityArb=23254432-b9cb-4b93-98b6-ba9ed5e45a65&passkeyMetricsActionId=07975eeb-087d-42ab-971d-66c2807fe4f5")
+        
+        # Kích hoạt 2FA
+        WebDriverWait(driver, 10).until(EC.element_to_be_clickable((By.XPATH, "//input[@type='radio' and @value='SMS']"))).click()
+        driver.find_element(By.ID, "auth-mfa-remember-device").click()
+        driver.find_element(By.ID, "auth-continue").click()
+        
+        # Nhập OTP 2FA
+        otp_2fa = shopgmail_api.get_otp(orderid)
+        if not otp_2fa:
+            logger.error(f"CẢNH BÁO: Không lấy được OTP 2FA cho {email}")
+            log_failed_account(email, "captcha.txt")
+            return False
+        
+        otp_field_2fa = WebDriverWait(driver, 10).until(EC.presence_of_element_located((By.ID, "auth-mfa-otpcode")))
+        human_type(otp_field_2fa, otp_2fa)
+        driver.find_element(By.ID, "auth-signin-button").click()
+        
+        # Kiểm tra CAPTCHA lần nữa
+        if not handle_captcha(driver, email):
+            log_failed_account(email, "captcha.txt")
+            return False
+        
+        # Sao chép mã dự phòng 2FA
+        backup_code = WebDriverWait(driver, 10).until(EC.presence_of_element_located((By.XPATH, "//span[contains(@class, 'backup-code')]"))).text
+        if not backup_code:
+            logger.error(f"CẢNH BÁO: Không lấy được mã dự phòng 2FA cho {email}")
+            return False
+        
+        # Điều hướng đến sổ địa chỉ
+        driver.get("https://www.amazon.com/gp/aw/address-book?ref_=aw_ya_hp_manage_address")
+        
+        # Thêm địa chỉ
+        try:
+            address_field = driver.find_element(By.ID, "address-ui-widgets-enterAddressFullName")
+            human_type(address_field, username)
+            
+            phone_field = driver.find_element(By.ID, "address-ui-widgets-enterAddressPhoneNumber")
+            human_type(phone_field, sdt)
+            
+            address_lines = address.split(", ")
+            driver.find_element(By.ID, "address-ui-widgets-enterAddressLine1").send_keys(address_lines[0])
+            if len(address_lines) > 1:
+                driver.find_element(By.ID, "address-ui-widgets-enterAddressLine2").send_keys(address_lines[1])
+            driver.find_element(By.ID, "address-ui-widgets-enterAddressCity").send_keys(address_lines[-3])
+            driver.find_element(By.ID, "address-ui-widgets-enterAddressStateOrRegion").send_keys(address_lines[-2])
+            driver.find_element(By.ID, "address-ui-widgets-enterAddressPostalCode").send_keys(address_lines[-1])
+            driver.find_element(By.ID, "address-ui-widgets-enterAddressCountryCode").send_keys("US")
+            driver.find_element(By.ID, "address-ui-widgets-form-submit-button").click()
+            
+            # Lưu tài khoản thành công
+            save_account(email, password, backup_code)
+            logger.info(f"THÔNG TIN: Đăng ký thành công {email}")
+            return True
+        except Exception as e:
+            logger.error(f"CẢNH BÁO: Thêm địa chỉ thất bại cho {email}: {str(e)}")
+            log_failed_account(email, "chua_add.txt")
+            return False
+    except Exception as e:
+        logger.error(f"CẢNH BÁO: Lỗi khi xử lý {email}: {str(e)}")
+        log_failed_account(email, "captcha.txt")
+        return False
+    finally:
+        driver.quit()
+        gemlogin.close_profile(profile_id)
+        if not gemlogin.delete_profile(profile_id):
+            logger.error(f"CẢNH BÁO: Không xóa được cấu hình {profile_id} cho {email}")
+
+# Hàm chính
+def main():
+    # Nhập API key và số lượng tài khoản
+    logger.info("THÔNG TIN: Đang kiểm tra apikey api.shopgmail9999.com")
+    apikey = read_file("apikey.txt")
+    if not apikey:
+        logger.error("CẢNH BÁO: Không tìm thấy apikey. Vui lý nhập apikey.txt")
+        return
+    logger.info(f"API key: {apikey}")
+    num_accounts = int(input("Nhập số tài khoản cần tạo: "))
+    
+    # Khởi tạo ShopGmailAPI
+    shopgmail_api = ShopGmailAPI(apikey)
+    
+    # Tải tệp đầu vào
+    usernames = read_file("username.txt")
+    sdts = read_file("sdt.txt")
+    addresses = read_file("add.txt")
+    proxies = read_file("proxy.txt")
+    
+    # Đảm bảo đủ đầu vào
+    min_length = min(len(usernames), len(sdts), len(addresses), len(proxies), num_accounts)
+    logger.info(f"THÔNG TIN: Sẽ xử lý {min_length} tài khoản")
+    
+    # Xử lý tài khoản đồng thời
+    with ThreadPoolExecutor(max_workers=20) as executor:
+        futures = [
+            executor.submit(register_amazon, usernames[i], sdts[i], addresses[i], proxies[i], shopgmail_api)
+            for i in range(min_length)
+        ]
+        for future in futures:
+            future.result()
+
+if __name__ == "__main__":
+    main()
