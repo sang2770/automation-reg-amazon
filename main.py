@@ -11,8 +11,13 @@ from selenium.webdriver.chrome.options import Options
 from selenium.webdriver import ActionChains
 from selenium.webdriver.common.keys import Keys
 from log import logger
+from webdriver_manager.chrome import ChromeDriverManager
 import json
+from selenium.webdriver.chrome.service import Service
+from selenium.common.exceptions import TimeoutException, WebDriverException
+import traceback
 
+service = Service(ChromeDriverManager(driver_version="135.0.7049.95").install())
 
 # Hàm đọc config.json
 def read_config(file_path):
@@ -28,30 +33,30 @@ config = read_config("config.json")
 # GemLogin API client
 class GemLoginAPI:
     def __init__(self):
-        self.base_url = config.gem_login_server or "http://localhost:1010"
+        self.base_url = getattr(config, "gem_login_server", "http://localhost:1010")
         self.session = requests.Session()
 
     def create_profile(self, proxy, profile_name="AmazonProfile"):
         # Tạo cấu hình mới với proxy SOCKS5 và hệ điều hành Android
         payload = {
-            "profile_name": profile_name,
+            "profile_name": f"{profile_name}_{random.randint(1000, 9999)}",
             "group_name": "All",
             "raw_proxy": f"socks5://{proxy}",
-            "startup_urls": [ config.reg_link or "https://www.amazon.com/amazonprime"],
-            "is_noise_canvas": True,
-            "is_noise_webgl": True,
-            "is_noise_client_rect": True,
+            "startup_urls": getattr(config, "reg_link", "https://www.amazon.com/amazonprime"),
+            "is_noise_canvas": False,
+            "is_noise_webgl": False,
+            "is_noise_client_rect": False,
             "is_noise_audio_context": True,
-            "is_random_screen": True,
+            "is_random_screen": False,
             "is_masked_webgl_data": True,
             "is_masked_media_device": True,
-            "os": {"type": "Android", "version": "11"},  # Emulate Android 11
-            "webrtc_mode": 1,  # Tắt WebRTC
+            "os": {"type": "Android", "version": "14"},
+            "webrtc_mode": 2,
             "browser_version": "135",
+            "browser_type": "chrome",
             "language": "en",
-            "time_zone": "Asia/Bangkok",
-            "country": "Vietnam",
-            "user_agent": "Mozilla/5.0 (Linux; Android 11; SM-G998B Build/RP1A.200720.012; wv) AppleWebKit/537.36 (KHTML, like Gecko) Version/4.0 Chrome/136.0.5528.74 Mobile Safari/537.36"
+            "time_zone": "America/New_York",
+            "country": "United States",
         }
         response = self.session.post(f"{self.base_url}/api/profiles/create", json=payload)
         if response.status_code == 200 and response.json().get("success"):
@@ -76,7 +81,7 @@ class GemLoginAPI:
         response = self.session.get(f"{self.base_url}/api/profiles/delete/{profile_id}")
         if response.status_code == 200 and response.json().get("success"):
             return True
-        logger.error(f"CẢNH BÁO: Không xóa được cấu hình {profile_id}")
+        logger.error(f"CẢNH BÁO: Không xóa được cấu hình {profile_id} {response.json().get('message')}")
         return False
 
 # ShopGmail9999 API client
@@ -187,16 +192,24 @@ def log_failed_account(email, file_path):
         f.write(f"{email}\n")
     logger.warning(f"CẢNH BÁO: Đã ghi tài khoản lỗi {email} vào {file_path}")
 
-def click_element(driver, element):
+def click_element(driver, element, timeout=10):
     try:
+        time.sleep(2)
+        # Scroll element vào giữa màn hình
         driver.execute_script("arguments[0].scrollIntoView({block: 'center'});", element)
-        time.sleep(1)
+        # Click bằng JS
         driver.execute_script("arguments[0].click();", element)
-    except Exception as e:
+    except TimeoutException:
+        logger.error("Timeout chờ element có thể click")
+    except WebDriverException as e:
+        logger.warning(f"Click bằng JS thất bại: {e}, thử dùng ActionChains...")
         try:
+            from selenium.webdriver import ActionChains
             ActionChains(driver).move_to_element(element).click().perform()
-        except Exception as e:
-            logger.error(f"Không thể chọn element: {str(e)}")
+        except Exception as ex:
+            logger.error(f"Không thể chọn element bằng ActionChains: {ex}")
+    except Exception as ex:
+        logger.error(f"Lỗi không xác định khi click element: {ex}")
 
 def get_2fa_code(secret_key):
     try:
@@ -232,7 +245,8 @@ def register_amazon(username, sdt, address, proxy, shopgmail_api):
     gemlogin = GemLoginAPI()
     
     # Tạo Gmail mới
-    email, orderid = shopgmail_api.create_gmail_account()
+    # email, orderid = shopgmail_api.create_gmail_account()
+    email, orderid = ["Atefislam799@gmail.com", "140725155933838"]
     if not email or not orderid:
         logger.error("CẢNH BÁO: Không thể tạo Gmail mới")
         return False
@@ -250,6 +264,7 @@ def register_amazon(username, sdt, address, proxy, shopgmail_api):
         gemlogin.delete_profile(profile_id)
         return False
     
+    
     remote_debugging_address = profile_data.get("remote_debugging_address")
     if not remote_debugging_address:
         logger.error(f"CẢNH BÁO: Không có địa chỉ gỡ lỗi từ xa cho {email}")
@@ -260,14 +275,16 @@ def register_amazon(username, sdt, address, proxy, shopgmail_api):
     # Thiết lập Selenium với trình duyệt của GemLogin
     chrome_options = Options()
     chrome_options.add_experimental_option("debuggerAddress", remote_debugging_address)
-    driver = webdriver.Chrome(options=chrome_options)
+    driver = webdriver.Chrome(service=service, options=chrome_options)
     try:
+        start_link = getattr(config, "reg_link", "https://www.amazon.com/amazonprime")
+        driver.get(start_link)
         wait = WebDriverWait(driver, 10)
-        # Điều hướng đến Amazon Prime (đã tải qua startup_urls)
-        form = wait.until(EC.presence_of_element_located((By.XPATH, "//form[@action='/gp/prime/pipeline/membersignup']")))
-        join_prime_button = WebDriverWait(form, 10).until(EC.presence_of_element_located((By.XPATH, ".//span[contains(text(), 'Join Prime')]")))
-        click_element(driver, join_prime_button)
-        
+        form = wait.until(
+            EC.presence_of_element_located((By.CSS_SELECTOR, 'form[action="/gp/prime/pipeline/membersignup"]'))
+        )
+        form.submit()
+
         # Chọn Tạo tài khoản
         create_account_button = wait.until(EC.presence_of_element_located((By.ID, "register_accordion_header")))
         click_element(driver, create_account_button)
@@ -305,7 +322,7 @@ def register_amazon(username, sdt, address, proxy, shopgmail_api):
             return False
         
         # Điều hướng đến thiết lập 2FA
-        driver.get( config.2fa_amazon_link or "https://www.amazon.com/ax/account/manage?openid.return_to=https%3A%2F%2Fwww.amazon.com%2Fyour-account%3Fref_%3Dya_cnep&openid.assoc_handle=anywhere_v2_us&shouldShowPasskeyLink=true&passkeyEligibilityArb=23254432-b9cb-4b93-98b6-ba9ed5e45a65&passkeyMetricsActionId=07975eeb-087d-42ab-971d-66c2807fe4f5")
+        driver.get(getattr(config, "2fa_amazon_link", "https://www.amazon.com/ax/account/manage?openid.return_to=https%3A%2F%2Fwww.amazon.com%2Fyour-account%3Fref_%3Dya_cnep&openid.assoc_handle=anywhere_v2_us&shouldShowPasskeyLink=true&passkeyEligibilityArb=23254432-b9cb-4b93-98b6-ba9ed5e45a65&passkeyMetricsActionId=07975eeb-087d-42ab-971d-66c2807fe4f5"))
         
         # Kích hoạt 2FA
         WebDriverWait(driver, 10).until(EC.element_to_be_clickable((By.ID, "TWO_STEP_VERIFICATION_BUTTON"))).click()
@@ -318,7 +335,7 @@ def register_amazon(username, sdt, address, proxy, shopgmail_api):
             log_failed_account(email, "captcha.txt")
             return False
         
-        otp_field_2fa = driver.find_element(By.ID, "otp_submit_form")
+        otp_field_2fa = driver.find_element(By.ID, "input-box-otp")
         human_type(otp_field_2fa, otp_2fa)
         click_element(driver, driver.find_element(By.ID, "cvf-submit-otp-button"))
         
@@ -341,7 +358,8 @@ def register_amazon(username, sdt, address, proxy, shopgmail_api):
         
         otp_field_2fa = WebDriverWait(driver, 10).until(EC.presence_of_element_located((By.ID, "ch-auth-app-code-input")))
         human_type(otp_field_2fa, otp_2fa)
-        click_element(driver, driver.find_element(By.ID, "ch-auth-app-submit-button"))
+        formConfirm =  WebDriverWait(driver, 10).until(EC.presence_of_element_located((By.ID, "verification-code-form")))
+        formConfirm.submit()
         
         # Kiểm tra CAPTCHA lần nữa
         if not handle_captcha(driver, email):
@@ -358,7 +376,7 @@ def register_amazon(username, sdt, address, proxy, shopgmail_api):
 
         
         # Điều hướng đến sổ địa chỉ
-        driver.get(config.amazon_add_link or "https://www.amazon.com/a/addresses/add?ref=ya_address_book_add_button")
+        driver.get(getattr(config, "amazon_add_link","https://www.amazon.com/a/addresses/add?ref=ya_address_book_add_button"))
         
         # Thêm địa chỉ
         try:
@@ -388,7 +406,7 @@ def register_amazon(username, sdt, address, proxy, shopgmail_api):
             log_failed_account(email, "chua_add.txt")
             return False
     except Exception as e:
-        logger.error(f"CẢNH BÁO: Lỗi khi xử lý {email}: {str(e)}")
+        logger.error(f"CẢNH BÁO: Lỗi khi xử lý {email}: {str(e)}\n{traceback.format_exc()}")
         log_failed_account(email, "captcha.txt")
         return False
     finally:
@@ -423,10 +441,11 @@ def main():
     
     # Xử lý tài khoản đồng thời
     with ThreadPoolExecutor(max_workers=20) as executor:
-        futures = [
-            executor.submit(register_amazon, usernames[i], sdts[i], addresses[i], proxies[i], shopgmail_api)
-            for i in range(min_length)
-        ]
+        futures = []
+        for i in range(min_length):
+            futures.append(executor.submit(register_amazon, usernames[i], sdts[i], addresses[i], proxies[i], shopgmail_api))
+            time.sleep(2)
+
         for future in futures:
             future.result()
 

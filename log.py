@@ -1,12 +1,12 @@
 import logging
-from logging.handlers import RotatingFileHandler
 import colorlog
 
 
 logger = None
 # Thiết lập logging
 def setup_logging():
-    logger = logging.getLogger()
+    global logger
+    logger = logging.getLogger("my_logger")
     logger.setLevel(logging.INFO)
 
     # Định dạng log với màu sắc cho console
@@ -33,8 +33,7 @@ def setup_logging():
     console_handler.setFormatter(console_formatter)
     logger.addHandler(console_handler)
 
-    # File handler với rotation (giới hạn 5MB, giữ 3 file backup)
-    file_handler = RotatingFileHandler('amazon_reg_tool.log', maxBytes=5*1024*1024, backupCount=3)
+    file_handler = logging.FileHandler('amazon_reg_tool.log', encoding='utf-8')
     file_handler.setFormatter(file_formatter)
     logger.addHandler(file_handler)
 
