@@ -1,0 +1,6 @@
+{
+    "gem_login_server": "http://localhost:1010",
+    "reg_link": "https://www.amazon.com/amazonprime",
+    "2fa_amazon_link": "https://www.amazon.com/ax/account/manage?openid.return_to=https%3A%2F%2Fwww.amazon.com%2Fyour-account%3Fref_%3Dya_cnep&openid.assoc_handle=anywhere_v2_us&shouldShowPasskeyLink=true&passkeyEligibilityArb=23254432-b9cb-4b93-98b6-ba9ed5e45a65&passkeyMetricsActionId=07975eeb-087d-42ab-971d-66c2807fe4f5",
+    "amazon_add_link": "https://www.amazon.com/a/addresses/add?ref=ya_address_book_add_button"
+}

@@ -8,13 +8,27 @@ from selenium.webdriver.common.by import By
 from selenium.webdriver.support.ui import WebDriverWait
 from selenium.webdriver.support import expected_conditions as EC
 from selenium.webdriver.chrome.options import Options
+from selenium.webdriver import ActionChains
+from selenium.webdriver.common.keys import Keys
 from log import logger
+import json
 
+
+# Hàm đọc config.json
+def read_config(file_path):
+    try:
+        with open(file_path, 'r', encoding='utf-8') as f:
+            return json.load(f)
+    except FileNotFoundError:
+        logger.warning(f"CẢNH BÁO: Không tìm thấy tệp {file_path}. Chạy mà không dùng dữ liệu từ tệp.")
+        return {}
+
+config = read_config("config.json")
 
 # GemLogin API client
 class GemLoginAPI:
     def __init__(self):
-        self.base_url = "http://localhost:1010"
+        self.base_url = config.gem_login_server or "http://localhost:1010"
         self.session = requests.Session()
 
     def create_profile(self, proxy, profile_name="AmazonProfile"):
@@ -23,7 +37,7 @@ class GemLoginAPI:
             "profile_name": profile_name,
             "group_name": "All",
             "raw_proxy": f"socks5://{proxy}",
-            "startup_urls": ["https://www.amazon.com/amazonprime"],
+            "startup_urls": [ config.reg_link or "https://www.amazon.com/amazonprime"],
             "is_noise_canvas": True,
             "is_noise_webgl": True,
             "is_noise_client_rect": True,
@@ -173,6 +187,46 @@ def log_failed_account(email, file_path):
         f.write(f"{email}\n")
     logger.warning(f"CẢNH BÁO: Đã ghi tài khoản lỗi {email} vào {file_path}")
 
+def click_element(driver, element):
+    try:
+        driver.execute_script("arguments[0].scrollIntoView({block: 'center'});", element)
+        time.sleep(1)
+        driver.execute_script("arguments[0].click();", element)
+    except Exception as e:
+        try:
+            ActionChains(driver).move_to_element(element).click().perform()
+        except Exception as e:
+            logger.error(f"Không thể chọn element: {str(e)}")
+
+def get_2fa_code(secret_key):
+    try:
+        url = f"https://2fa.live/tok/{secret_key}"
+        response = requests.get(url)
+        if response.status_code == 200:
+            data = response.json()
+            return data.get('token')
+        else:
+            logger.error(f"Không lấy được mã 2FA cho khóa: {secret_key}")
+            return None
+    except Exception as e:
+        logger.error(f"Lỗi khi lấy mã 2FA: {repr(e)}")
+        return None
+
+def select_autocomplete(driver):
+    try:
+        # Chờ dropdown autocomplete xuất hiện
+        WebDriverWait(driver, 3).until(
+            EC.presence_of_element_located((By.XPATH, "//div[contains(@class, 'a-dropdown-container')]//ul[@role='listbox']"))
+        )
+        # Gửi phím DOWN và ENTER để chọn gợi ý đầu tiên
+        driver.switch_to.active_element.send_keys(Keys.DOWN)
+        time.sleep(random.uniform(0.1, 0.3))  # Chờ ngắn để mô phỏng hành vi người dùng
+        driver.switch_to.active_element.send_keys(Keys.ENTER)
+        logger.info("THÔNG TIN: Đã chọn gợi ý autocomplete cho địa chỉ")
+    except Exception:
+        # Nếu không có autocomplete, tiếp tục
+        logger.info("THÔNG TIN: Không tìm thấy autocomplete, tiếp tục nhập địa chỉ")
+
 # Hàm đăng ký Amazon chính
 def register_amazon(username, sdt, address, proxy, shopgmail_api):
     gemlogin = GemLoginAPI()
@@ -207,17 +261,16 @@ def register_amazon(username, sdt, address, proxy, shopgmail_api):
     chrome_options = Options()
     chrome_options.add_experimental_option("debuggerAddress", remote_debugging_address)
     driver = webdriver.Chrome(options=chrome_options)
-    
     try:
         wait = WebDriverWait(driver, 10)
         # Điều hướng đến Amazon Prime (đã tải qua startup_urls)
         form = wait.until(EC.presence_of_element_located((By.XPATH, "//form[@action='/gp/prime/pipeline/membersignup']")))
         join_prime_button = WebDriverWait(form, 10).until(EC.presence_of_element_located((By.XPATH, ".//span[contains(text(), 'Join Prime')]")))
-        join_prime_button.click()
+        click_element(driver, join_prime_button)
         
         # Chọn Tạo tài khoản
         create_account_button = wait.until(EC.presence_of_element_located((By.ID, "register_accordion_header")))
-        create_account_button.click()
+        click_element(driver, create_account_button)
         # Điền biểu mẫu đăng ký
         name_field = wait.until(EC.presence_of_element_located((By.ID, "ap_customer_name")))
         human_type(name_field, username)
@@ -228,8 +281,7 @@ def register_amazon(username, sdt, address, proxy, shopgmail_api):
         password = ''.join(random.choices(string.ascii_letters + string.digits, k=12))
         password_field = driver.find_element(By.ID, "ap_password")
         human_type(password_field, password)
-        
-        driver.find_element(By.ID, "continue").click()
+        click_element(driver, driver.find_element(By.ID, "continue"))
         
         # Kiểm tra CAPTCHA
         if not handle_captcha(driver, email):
@@ -245,7 +297,7 @@ def register_amazon(username, sdt, address, proxy, shopgmail_api):
         
         otp_field = WebDriverWait(driver, 10).until(EC.presence_of_element_located((By.ID, "cvf-input-code")))
         human_type(otp_field, otp)
-        driver.find_element(By.CSS_SELECTOR, "input[aria-label='Verify OTP Button']").click()
+        click_element(driver, driver.find_element(By.CSS_SELECTOR, "input[aria-label='Verify OTP Button']"))
         
         # Kiểm tra CAPTCHA lần nữa
         if not handle_captcha(driver, email):
@@ -253,11 +305,12 @@ def register_amazon(username, sdt, address, proxy, shopgmail_api):
             return False
         
         # Điều hướng đến thiết lập 2FA
-        driver.get("https://www.amazon.com/ax/account/manage?openid.return_to=https%3A%2F%2Fwww.amazon.com%2Fyour-account%3Fref_%3Dya_cnep&openid.assoc_handle=anywhere_v2_us&shouldShowPasskeyLink=true&passkeyEligibilityArb=23254432-b9cb-4b93-98b6-ba9ed5e45a65&passkeyMetricsActionId=07975eeb-087d-42ab-971d-66c2807fe4f5")
+        driver.get( config.2fa_amazon_link or "https://www.amazon.com/ax/account/manage?openid.return_to=https%3A%2F%2Fwww.amazon.com%2Fyour-account%3Fref_%3Dya_cnep&openid.assoc_handle=anywhere_v2_us&shouldShowPasskeyLink=true&passkeyEligibilityArb=23254432-b9cb-4b93-98b6-ba9ed5e45a65&passkeyMetricsActionId=07975eeb-087d-42ab-971d-66c2807fe4f5")
         
         # Kích hoạt 2FA
         WebDriverWait(driver, 10).until(EC.element_to_be_clickable((By.ID, "TWO_STEP_VERIFICATION_BUTTON"))).click()
         
+        time.sleep(5)  # Wait for the page to load
         # get OTP again
         otp_2fa = shopgmail_api.get_otp(orderid)
         if not otp_2fa:
@@ -267,19 +320,20 @@ def register_amazon(username, sdt, address, proxy, shopgmail_api):
         
         otp_field_2fa = driver.find_element(By.ID, "otp_submit_form")
         human_type(otp_field_2fa, otp_2fa)
-        driver.find_element(By.ID, "cvf-submit-otp-button").click()
+        click_element(driver, driver.find_element(By.ID, "cvf-submit-otp-button"))
         
         # Kiểm tra CAPTCHA lần nữa
         if not handle_captcha(driver, email):
             log_failed_account(email, "captcha.txt")
             return False
+        
         # Id cvf-submit-otp-button
-        driver.find_element(By.ID, "sia-otp-accordion-totp-header").click()
+        click_element(driver, driver.find_element(By.ID, "sia-otp-accordion-totp-header"))
         # get sia-auth-app-formatted-secret
         backup_code = driver.find_element(By.ID, "sia-auth-app-formatted-secret").text
         
         # get 2fa OTP code from secret
-        otp_2fa = "...." # TODO
+        otp_2fa = get_2fa_code(backup_code)
         if not otp_2fa:
             logger.error(f"CẢNH BÁO: Không lấy được OTP 2FA cho {email}")
             log_failed_account(email, "captcha.txt")
@@ -287,7 +341,7 @@ def register_amazon(username, sdt, address, proxy, shopgmail_api):
         
         otp_field_2fa = WebDriverWait(driver, 10).until(EC.presence_of_element_located((By.ID, "ch-auth-app-code-input")))
         human_type(otp_field_2fa, otp_2fa)
-        driver.find_element(By.ID, "ch-auth-app-submit-button").click()
+        click_element(driver, driver.find_element(By.ID, "ch-auth-app-submit-button"))
         
         # Kiểm tra CAPTCHA lần nữa
         if not handle_captcha(driver, email):
@@ -295,7 +349,7 @@ def register_amazon(username, sdt, address, proxy, shopgmail_api):
             return False
         
         # Confirm button enable-mfa-form-submit
-        driver.find_element(By.ID, "enable-mfa-form-submit").click()
+        click_element(driver, driver.find_element(By.ID, "enable-mfa-form-submit"))
         
         # Kiểm tra CAPTCHA lần nữa
         if not handle_captcha(driver, email):
@@ -304,7 +358,7 @@ def register_amazon(username, sdt, address, proxy, shopgmail_api):
 
         
         # Điều hướng đến sổ địa chỉ
-        driver.get("https://www.amazon.com/a/addresses/add?ref=ya_address_book_add_button")
+        driver.get(config.amazon_add_link or "https://www.amazon.com/a/addresses/add?ref=ya_address_book_add_button")
         
         # Thêm địa chỉ
         try:
@@ -315,13 +369,15 @@ def register_amazon(username, sdt, address, proxy, shopgmail_api):
             human_type(phone_field, sdt)
             
             address_lines = address.split(", ")
-            driver.find_element(By.ID, "address-ui-widgets-enterAddressLine1").send_keys(address_lines[0])
+            human_type(driver.find_element(By.ID, "address-ui-widgets-enterAddressLine1"), address_lines[0])
+            select_autocomplete(driver)
             if len(address_lines) > 1:
                 driver.find_element(By.ID, "address-ui-widgets-enterAddressLine2").send_keys(address_lines[1])
-            driver.find_element(By.ID, "address-ui-widgets-enterAddressCity").send_keys(address_lines[-3])
-            driver.find_element(By.ID, "address-ui-widgets-enterAddressStateOrRegion").send_keys(address_lines[-2]) # Select
-            driver.find_element(By.ID, "address-ui-widgets-enterAddressPostalCode").send_keys(address_lines[-1])
-            driver.find_element(By.ID, "address-ui-widgets-form-submit-button").click()
+            
+            # driver.find_element(By.ID, "address-ui-widgets-enterAddressCity").send_keys(address_lines[-3])
+            # driver.find_element(By.ID, "address-ui-widgets-enterAddressStateOrRegion").send_keys(address_lines[-2]) # Select'
+            # driver.find_element(By.ID, "address-ui-widgets-enterAddressPostalCode").send_keys(address_lines[-1])
+            click_element(driver, driver.find_element(By.ID, "address-ui-widgets-form-submit-button"))
             
             # Lưu tài khoản thành công
             save_account(email, password, backup_code)
