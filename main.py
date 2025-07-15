@@ -170,7 +170,7 @@ def handle_captcha(driver, email):
 def human_type(element, text):
     for char in text:
         element.send_keys(char)
-        time.sleep(random.uniform(0.05, 0.15))
+        time.sleep(random.uniform(0.1, 0.3))
 
 # Hàm đọc dòng từ tệp
 def read_file(file_path):
@@ -246,7 +246,7 @@ def get_2fa_code(secret_key):
         response = requests.get(url)
         if response.status_code == 200:
             data = response.json()
-            logger.info(f"THÔNG TIN: Lấy được má 2FA cho khóa: {secret_key} - {data.get('token')}")
+            logger.info(f"THÔNG TIN: Lấy được mã 2FA cho khóa: {secret_key} - {data.get('token')}")
             return data.get('token')
         else:
             logger.error(f"Không lấy được mã 2FA cho khóa: {secret_key}")
@@ -258,7 +258,7 @@ def get_2fa_code(secret_key):
 def select_autocomplete(driver):
     try:
         # Chờ dropdown autocomplete xuất hiện
-        time.sleep(random.uniform(2, 4))
+        time.sleep(random.uniform(1, 3))
         # Gửi phím DOWN và ENTER để chọn gợi ý đầu tiên
         driver.switch_to.active_element.send_keys(Keys.DOWN)
         time.sleep(random.uniform(0.1, 0.3))  # Chờ ngắn để mô phỏng hành vi người dùng
@@ -304,35 +304,47 @@ def register_amazon(username, sdt, address, proxy, password, shopgmail_api):
     chrome_options.add_experimental_option("debuggerAddress", remote_debugging_address)
     driver = webdriver.Chrome(service=service, options=chrome_options)
     try:
-        start_link = getattr(config, "reg_link", "https://www.amazon.com/amazonprime")
-        driver.get(start_link)
-        wait = WebDriverWait(driver, 10)
-        form = wait.until(
-            EC.presence_of_element_located((By.CSS_SELECTOR, 'form[action="/gp/prime/pipeline/membersignup"]'))
-        )
-        form.submit()
+        def handle_reg_link(start_link):
+            driver.get(start_link)
+            wait = WebDriverWait(driver, 10)
+            if "www.amazon.com/amazonprime" in start_link:
+                form = wait.until(
+                    EC.presence_of_element_located((By.CSS_SELECTOR, 'form[action="/gp/prime/pipeline/membersignup"]'))
+                )
+                form.submit()
 
-        # Chọn Tạo tài khoản
-        create_account_button = wait.until(EC.presence_of_element_located((By.ID, "register_accordion_header")))
-        click_element(driver, create_account_button)
-        # Điền biểu mẫu đăng ký
-        name_field = wait.until(EC.presence_of_element_located((By.ID, "ap_customer_name")))
-        human_type(name_field, username)
+            # Chọn Tạo tài khoản
+            create_account_button = wait.until(EC.presence_of_element_located((By.ID, "register_accordion_header")))
+            click_element(driver, create_account_button)
+            # Điền biểu mẫu đăng ký
+            name_field = wait.until(EC.presence_of_element_located((By.ID, "ap_customer_name")))
+            human_type(name_field, username)
+            
+            email_field = driver.find_element(By.ID, "ap_email")
+            human_type(email_field, email)
+            
+            # password = ''.join(random.choices(string.ascii_letters + string.digits, k=12))
+            # password = "123456aA@Sang"
+            password_field = driver.find_element(By.ID, "ap_password")
+            human_type(password_field, password)
+            click_element(driver, driver.find_element(By.ID, "continue"))
+            
+            # Kiểm tra CAPTCHA
+            if not handle_captcha(driver, email):
+                log_failed_account(email, "captcha.txt")
+                return False
+            return True
         
-        email_field = driver.find_element(By.ID, "ap_email")
-        human_type(email_field, email)
-        
-        # password = ''.join(random.choices(string.ascii_letters + string.digits, k=12))
-        # password = "123456aA@Sang"
-        password_field = driver.find_element(By.ID, "ap_password")
-        human_type(password_field, password)
-        click_element(driver, driver.find_element(By.ID, "continue"))
-        
-        # Kiểm tra CAPTCHA
-        if not handle_captcha(driver, email):
+        start_links = read_file("reg_link.txt")
+        check = False
+        for start_link in start_links:
+            if handle_reg_link(start_link):
+                check = True
+                break
+        if not check:
+            logger.error(f"CẢNH BÁO: Không tạo được tài khoản cho {email}")
             log_failed_account(email, "captcha.txt")
             return False
-        
         # Lấy OTP để xác minh Gmail
         otp = shopgmail_api.get_otp(orderid)
         if not otp:
@@ -451,7 +463,7 @@ def register_amazon(username, sdt, address, proxy, password, shopgmail_api):
             logger.error(f"CẢNH BÁO: Không xóa được cấu hình {profile_id} cho {email}")
 
 
-def register_and_cleanup(i, username, sdt, address, password, proxy, api):
+def register_and_cleanup(i, username, sdt, address, proxy, password, api):
     try:
         success = register_amazon(username, sdt, address, proxy, password, api)
         if success:

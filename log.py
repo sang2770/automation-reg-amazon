@@ -19,13 +19,13 @@ def setup_logging():
             'ERROR': 'red',
             'CRITICAL': 'bold_red',
         },
-        datefmt='%Y-%m-%d %H:%M:%S'
+        datefmt='%H:%M:%S'
     )
 
     # Định dạng log cho file
     file_formatter = logging.Formatter(
         '%(asctime)s - %(levelname)s - %(message)s',
-        datefmt='%Y-%m-%d %H:%M:%S'
+        datefmt='%H:%M:%S'
     )
 
     # Console handler
