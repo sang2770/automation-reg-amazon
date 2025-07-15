@@ -306,6 +306,7 @@ def register_amazon(username, sdt, address, proxy, password, shopgmail_api):
     try:
         def handle_reg_link(start_link):
             driver.get(start_link)
+            time.sleep(10)
             wait = WebDriverWait(driver, 10)
             if "www.amazon.com/amazonprime" in start_link:
                 form = wait.until(
@@ -363,7 +364,7 @@ def register_amazon(username, sdt, address, proxy, password, shopgmail_api):
         
         # Điều hướng đến sổ địa chỉ
         driver.get(getattr(config, "amazon_add_link","https://www.amazon.com/a/addresses/add?ref=ya_address_book_add_button"))
-        
+        time.sleep(10)
         # Thêm địa chỉ
         try:
             address_field = driver.find_element(By.ID, "address-ui-widgets-enterAddressFullName")
@@ -387,7 +388,7 @@ def register_amazon(username, sdt, address, proxy, password, shopgmail_api):
                 return False
             
             # # Lưu tài khoản thành công
-            save_account(email, password, backup_code)
+            save_account(email, password, "")
             logger.info(f"THÔNG TIN: Đăng ký thành công {email}")
             return True
         except Exception as e:
@@ -416,7 +417,6 @@ def register_and_cleanup(i, username, sdt, address, proxy, password, api):
     except Exception as e:
         logger.error(f"Lỗi xử lý tài khoản {i}: {e}")
 
-
 # Hàm chính
 def main():
     # Nhập API key và số lượng tài khoản
@@ -426,7 +426,12 @@ def main():
         logger.error("CẢNH BÁO: Không tìm thấy apikey. Vui lý nhập apikey.txt")
         return
     logger.info(f"API key: {apikey}")
-    num_accounts = int(input("Nhập số tài khoản cần tạo: "))
+    try:
+        num_accounts = int(input("🔢 Nhập số tài khoản cần tạo: "))
+        max_threads = int(input("⚙️ Nhập số luồng chạy mỗi lần: "))
+    except ValueError:
+        logger.error("❌ Giá trị nhập vào không hợp lệ. Vui lòng nhập số nguyên.")
+        return
     
     # Khởi tạo ShopGmailAPI
     shopgmail_api = ShopGmailAPI(apikey)
@@ -440,18 +445,26 @@ def main():
     
     # Đảm bảo đủ đầu vào
     min_length = min(len(usernames), len(sdts), len(addresses), len(passwords), num_accounts)
-    logger.info(f"THÔNG TIN: Sẽ xử lý {min_length} tài khoản")
-    
+    if min_length == 0:
+        logger.error("❌ Dữ liệu đầu vào không đủ để xử lý.")
+        return
+    max_threads = min(max_threads, min_length)
+    logger.info(f"🔧 Sẽ xử lý {min_length} tài khoản với {max_threads} luồng")
     # Xử lý tài khoản đồng thời
-    with ThreadPoolExecutor(max_workers=20) as executor:
+    with ThreadPoolExecutor(max_workers=max_threads) as executor:
         futures = []
         for i in range(min_length):
-            proxie = proxies[min_length % len(proxies)].strip()
-            futures.append(executor.submit(register_and_cleanup, i, usernames[i], sdts[i], addresses[i], proxie, passwords[i], shopgmail_api))
-            time.sleep(2)
+            proxy = proxies[i % len(proxies)].strip() if proxies else ""
+            futures.append(executor.submit(
+                register_and_cleanup,
+                i, usernames[i], sdts[i], addresses[i], proxy, passwords[i], shopgmail_api
+            ))
+            time.sleep(1)
 
         for future in futures:
             future.result()
+
+    logger.info("🎉 Hoàn tất xử lý toàn bộ tài khoản.")
 
 if __name__ == "__main__":
     main()

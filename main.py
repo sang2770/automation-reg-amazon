@@ -307,9 +307,7 @@ def register_amazon(username, sdt, address, proxy, password, shopgmail_api):
         wait = WebDriverWait(driver, 10)
         def handle_reg_link(start_link):
             driver.get(start_link)
-            wait.until(
-                lambda d: d.execute_script('return document.readyState') == 'complete'
-            )
+            time.sleep(10)
             if "www.amazon.com/amazonprime" in start_link:
                 form = wait.until(
                     EC.presence_of_element_located((By.CSS_SELECTOR, 'form[action="/gp/prime/pipeline/membersignup"]'))
@@ -367,9 +365,7 @@ def register_amazon(username, sdt, address, proxy, password, shopgmail_api):
         
         # Điều hướng đến thiết lập 2FA
         driver.get(getattr(config, "2fa_amazon_link", "https://www.amazon.com/ax/account/manage?openid.return_to=https%3A%2F%2Fwww.amazon.com%2Fyour-account%3Fref_%3Dya_cnep&openid.assoc_handle=anywhere_v2_us&shouldShowPasskeyLink=true&passkeyEligibilityArb=23254432-b9cb-4b93-98b6-ba9ed5e45a65&passkeyMetricsActionId=07975eeb-087d-42ab-971d-66c2807fe4f5"))
-        wait.until(
-                lambda d: d.execute_script('return document.readyState') == 'complete'
-        )
+        time.sleep(10)
         # Kích hoạt 2FA
         WebDriverWait(driver, 10).until(EC.element_to_be_clickable((By.ID, "TWO_STEP_VERIFICATION_BUTTON"))).click()
         
@@ -427,9 +423,7 @@ def register_amazon(username, sdt, address, proxy, password, shopgmail_api):
         
         # Điều hướng đến sổ địa chỉ
         driver.get(getattr(config, "amazon_add_link","https://www.amazon.com/a/addresses/add?ref=ya_address_book_add_button"))
-        wait.until(
-                lambda d: d.execute_script('return document.readyState') == 'complete'
-        )
+        time.sleep(10)
         # Thêm địa chỉ
         try:
             # address_field = driver.find_element(By.ID, "address-ui-widgets-enterAddressFullName")
