@@ -16,6 +16,7 @@ import json
 from selenium.webdriver.chrome.service import Service
 from selenium.common.exceptions import TimeoutException, WebDriverException
 import traceback
+import threading
 
 service = Service(ChromeDriverManager(driver_version="135.0.7049.95").install())
 
@@ -180,17 +181,45 @@ def read_file(file_path):
         logger.warning(f"CẢNH BÁO: Không tìm thấy tệp {file_path}. Chạy mà không dùng dữ liệu từ tệp.")
         return []
 
+lock = threading.Lock()
+
+def remove_line(file_path, index):
+    with lock:
+        with open(file_path, "r", encoding="utf-8") as f:
+            lines = f.readlines()
+        if index < len(lines):
+            del lines[index]
+            with open(file_path, "w", encoding="utf-8") as f:
+                f.writelines(lines)
+
 # Hàm lưu chi tiết tài khoản
 def save_account(email, password, tfa_code, file_path="output.txt"):
-    with open(file_path, 'a', encoding='utf-8') as f:
-        f.write(f"{email}|{password}|{tfa_code}\n")
-    logger.info(f"THÔNG TIN: Đã lưu tài khoản {email} vào {file_path}")
+    if not is_account_existed(email, file_path):
+        with open(file_path, 'a', encoding='utf-8') as f:
+            f.write(f"{email}|{password}|{tfa_code}\n")
+        logger.info(f"THÔNG TIN: Đã lưu tài khoản {email} vào {file_path}")
+    else:
+        logger.warning(f"CẢNH BÁO: Tài khoản {email} đã tồn tại, không lưu lại")
+
+def is_account_existed(email, file_path):
+    try:
+        with open(file_path, 'r', encoding='utf-8') as f:
+            lines = f.readlines()
+            for line in lines:
+                if line.startswith(email):
+                    return True
+    except FileNotFoundError:
+        pass
+    return False
 
 # Hàm ghi log tài khoản lỗi
 def log_failed_account(email, file_path):
-    with open(file_path, 'a', encoding='utf-8') as f:
-        f.write(f"{email}\n")
-    logger.warning(f"CẢNH BÁO: Đã ghi tài khoản lỗi {email} vào {file_path}")
+    if not is_account_existed(email, file_path):
+        with open(file_path, 'a', encoding='utf-8') as f:
+            f.write(f"{email}\n")
+        logger.warning(f"CẢNH BÁO: Đã ghi tài khoản lỗi {email} vào {file_path}")
+    else:
+        logger.info(f"THÔNG TIN: Tài khoản {email} đã có trong {file_path}, không ghi lại")
 
 def click_element(driver, element, timeout=10):
     try:
@@ -213,10 +242,11 @@ def click_element(driver, element, timeout=10):
 
 def get_2fa_code(secret_key):
     try:
-        url = f"https://2fa.live/tok/{secret_key}"
+        url = f"https://2fa.live/tok/{secret_key.replace(' ', '')}"
         response = requests.get(url)
         if response.status_code == 200:
             data = response.json()
+            logger.info(f"THÔNG TIN: Lấy được má 2FA cho khóa: {secret_key} - {data.get('token')}")
             return data.get('token')
         else:
             logger.error(f"Không lấy được mã 2FA cho khóa: {secret_key}")
@@ -228,9 +258,7 @@ def get_2fa_code(secret_key):
 def select_autocomplete(driver):
     try:
         # Chờ dropdown autocomplete xuất hiện
-        WebDriverWait(driver, 3).until(
-            EC.presence_of_element_located((By.XPATH, "//div[contains(@class, 'a-dropdown-container')]//ul[@role='listbox']"))
-        )
+        time.sleep(random.uniform(2, 4))
         # Gửi phím DOWN và ENTER để chọn gợi ý đầu tiên
         driver.switch_to.active_element.send_keys(Keys.DOWN)
         time.sleep(random.uniform(0.1, 0.3))  # Chờ ngắn để mô phỏng hành vi người dùng
@@ -241,12 +269,11 @@ def select_autocomplete(driver):
         logger.info("THÔNG TIN: Không tìm thấy autocomplete, tiếp tục nhập địa chỉ")
 
 # Hàm đăng ký Amazon chính
-def register_amazon(username, sdt, address, proxy, shopgmail_api):
+def register_amazon(username, sdt, address, proxy, password, shopgmail_api):
     gemlogin = GemLoginAPI()
     
     # Tạo Gmail mới
-    # email, orderid = shopgmail_api.create_gmail_account()
-    email, orderid = ["Atefislam799@gmail.com", "140725155933838"]
+    email, orderid = shopgmail_api.create_gmail_account()
     if not email or not orderid:
         logger.error("CẢNH BÁO: Không thể tạo Gmail mới")
         return False
@@ -295,7 +322,8 @@ def register_amazon(username, sdt, address, proxy, shopgmail_api):
         email_field = driver.find_element(By.ID, "ap_email")
         human_type(email_field, email)
         
-        password = ''.join(random.choices(string.ascii_letters + string.digits, k=12))
+        # password = ''.join(random.choices(string.ascii_letters + string.digits, k=12))
+        # password = "123456aA@Sang"
         password_field = driver.find_element(By.ID, "ap_password")
         human_type(password_field, password)
         click_element(driver, driver.find_element(By.ID, "continue"))
@@ -337,7 +365,8 @@ def register_amazon(username, sdt, address, proxy, shopgmail_api):
         
         otp_field_2fa = driver.find_element(By.ID, "input-box-otp")
         human_type(otp_field_2fa, otp_2fa)
-        click_element(driver, driver.find_element(By.ID, "cvf-submit-otp-button"))
+        formConfirm =  WebDriverWait(driver, 10).until(EC.presence_of_element_located((By.ID, "verification-code-form")))
+        formConfirm.submit()
         
         # Kiểm tra CAPTCHA lần nữa
         if not handle_captcha(driver, email):
@@ -358,16 +387,19 @@ def register_amazon(username, sdt, address, proxy, shopgmail_api):
         
         otp_field_2fa = WebDriverWait(driver, 10).until(EC.presence_of_element_located((By.ID, "ch-auth-app-code-input")))
         human_type(otp_field_2fa, otp_2fa)
-        formConfirm =  WebDriverWait(driver, 10).until(EC.presence_of_element_located((By.ID, "verification-code-form")))
+        formConfirm =  WebDriverWait(driver, 10).until(EC.presence_of_element_located((By.ID, "sia-add-auth-app-form")))
         formConfirm.submit()
         
         # Kiểm tra CAPTCHA lần nữa
         if not handle_captcha(driver, email):
             log_failed_account(email, "captcha.txt")
             return False
-        
+
         # Confirm button enable-mfa-form-submit
-        click_element(driver, driver.find_element(By.ID, "enable-mfa-form-submit"))
+        enable_chechbox = driver.find_element(By.NAME, "trustThisDevice")
+        click_element(driver, enable_chechbox)
+        enable_2fa_form = WebDriverWait(driver, 10).until(EC.presence_of_element_located((By.ID, "enable-mfa-form")))
+        enable_2fa_form.submit()
         
         # Kiểm tra CAPTCHA lần nữa
         if not handle_captcha(driver, email):
@@ -391,13 +423,16 @@ def register_amazon(username, sdt, address, proxy, shopgmail_api):
             select_autocomplete(driver)
             if len(address_lines) > 1:
                 driver.find_element(By.ID, "address-ui-widgets-enterAddressLine2").send_keys(address_lines[1])
+            # submit form address-ui-address-form
+            formConfirm =  WebDriverWait(driver, 10).until(EC.presence_of_element_located((By.ID, "address-ui-address-form")))
+            formConfirm.submit()
             
-            # driver.find_element(By.ID, "address-ui-widgets-enterAddressCity").send_keys(address_lines[-3])
-            # driver.find_element(By.ID, "address-ui-widgets-enterAddressStateOrRegion").send_keys(address_lines[-2]) # Select'
-            # driver.find_element(By.ID, "address-ui-widgets-enterAddressPostalCode").send_keys(address_lines[-1])
-            click_element(driver, driver.find_element(By.ID, "address-ui-widgets-form-submit-button"))
+            # Kiểm tra CAPTCHA lần nữa
+            if not handle_captcha(driver, email):
+                log_failed_account(email, "captcha.txt")
+                return False
             
-            # Lưu tài khoản thành công
+            # # Lưu tài khoản thành công
             save_account(email, password, backup_code)
             logger.info(f"THÔNG TIN: Đăng ký thành công {email}")
             return True
@@ -414,6 +449,19 @@ def register_amazon(username, sdt, address, proxy, shopgmail_api):
         gemlogin.close_profile(profile_id)
         if not gemlogin.delete_profile(profile_id):
             logger.error(f"CẢNH BÁO: Không xóa được cấu hình {profile_id} cho {email}")
+
+
+def register_and_cleanup(i, username, sdt, address, password, proxy, api):
+    try:
+        success = register_amazon(username, sdt, address, proxy, password, api)
+        if success:
+            remove_line("username.txt", i)
+            remove_line("sdt.txt", i)
+            remove_line("add.txt", i)
+            remove_line("password.txt", i)
+    except Exception as e:
+        logger.error(f"Lỗi xử lý tài khoản {i}: {e}")
+
 
 # Hàm chính
 def main():
@@ -434,16 +482,18 @@ def main():
     sdts = read_file("sdt.txt")
     addresses = read_file("add.txt")
     proxies = read_file("proxy.txt")
+    passwords = read_file("password.txt")
     
     # Đảm bảo đủ đầu vào
-    min_length = min(len(usernames), len(sdts), len(addresses), len(proxies), num_accounts)
+    min_length = min(len(usernames), len(sdts), len(addresses), len(passwords), num_accounts)
     logger.info(f"THÔNG TIN: Sẽ xử lý {min_length} tài khoản")
     
     # Xử lý tài khoản đồng thời
     with ThreadPoolExecutor(max_workers=20) as executor:
         futures = []
         for i in range(min_length):
-            futures.append(executor.submit(register_amazon, usernames[i], sdts[i], addresses[i], proxies[i], shopgmail_api))
+            proxie = proxies[min_length % len(proxies)].strip()
+            futures.append(executor.submit(register_and_cleanup, i, usernames[i], sdts[i], addresses[i], proxie, passwords[i], shopgmail_api))
             time.sleep(2)
 
         for future in futures:
