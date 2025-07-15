@@ -4,3 +4,7 @@ dist
 *.zip
 log.*
 *.log
+*.exe
+*.spec
+dist_2fa/*
+dist_add/*

@@ -18,7 +18,7 @@ from selenium.common.exceptions import TimeoutException, WebDriverException
 import traceback
 import threading
 
-service = Service(ChromeDriverManager(driver_version="134.0.6998.166").install())
+service = Service(ChromeDriverManager(driver_version="135.0.7049.95").install())
 
 # Hàm đọc config.json
 def read_config(file_path):
@@ -53,7 +53,7 @@ class GemLoginAPI:
             "is_masked_media_device": True,
             "os": {"type": "Android", "version": "14"},
             "webrtc_mode": 2,
-            "browser_version": "134",
+            "browser_version": "135",
             "browser_type": "chrome",
             "language": "en",
             "time_zone": "America/New_York",
@@ -304,12 +304,9 @@ def register_amazon(username, sdt, address, proxy, password, shopgmail_api):
     chrome_options.add_experimental_option("debuggerAddress", remote_debugging_address)
     driver = webdriver.Chrome(service=service, options=chrome_options)
     try:
-        wait = WebDriverWait(driver, 10)
         def handle_reg_link(start_link):
             driver.get(start_link)
-            wait.until(
-                lambda d: d.execute_script('return document.readyState') == 'complete'
-            )
+            wait = WebDriverWait(driver, 10)
             if "www.amazon.com/amazonprime" in start_link:
                 form = wait.until(
                     EC.presence_of_element_located((By.CSS_SELECTOR, 'form[action="/gp/prime/pipeline/membersignup"]'))
@@ -344,7 +341,6 @@ def register_amazon(username, sdt, address, proxy, password, shopgmail_api):
             if handle_reg_link(start_link):
                 check = True
                 break
-            time.sleep(random.uniform(1, 3))
         if not check:
             logger.error(f"CẢNH BÁO: Không tạo được tài khoản cho {email}")
             log_failed_account(email, "captcha.txt")
@@ -365,75 +361,13 @@ def register_amazon(username, sdt, address, proxy, password, shopgmail_api):
             log_failed_account(email, "captcha.txt")
             return False
         
-        # Điều hướng đến thiết lập 2FA
-        driver.get(getattr(config, "2fa_amazon_link", "https://www.amazon.com/ax/account/manage?openid.return_to=https%3A%2F%2Fwww.amazon.com%2Fyour-account%3Fref_%3Dya_cnep&openid.assoc_handle=anywhere_v2_us&shouldShowPasskeyLink=true&passkeyEligibilityArb=23254432-b9cb-4b93-98b6-ba9ed5e45a65&passkeyMetricsActionId=07975eeb-087d-42ab-971d-66c2807fe4f5"))
-        wait.until(
-                lambda d: d.execute_script('return document.readyState') == 'complete'
-        )
-        # Kích hoạt 2FA
-        WebDriverWait(driver, 10).until(EC.element_to_be_clickable((By.ID, "TWO_STEP_VERIFICATION_BUTTON"))).click()
-        
-        time.sleep(5)  # Wait for the page to load
-        # get OTP again
-        otp_2fa = shopgmail_api.get_otp(orderid)
-        if not otp_2fa:
-            logger.error(f"CẢNH BÁO: Không lý OTP 2FA cho {email}")
-            log_failed_account(email, "captcha.txt")
-            return False
-        
-        otp_field_2fa = driver.find_element(By.ID, "input-box-otp")
-        human_type(otp_field_2fa, otp_2fa)
-        formConfirm =  WebDriverWait(driver, 10).until(EC.presence_of_element_located((By.ID, "verification-code-form")))
-        formConfirm.submit()
-        
-        # Kiểm tra CAPTCHA lần nữa
-        if not handle_captcha(driver, email):
-            log_failed_account(email, "captcha.txt")
-            return False
-        
-        # Id cvf-submit-otp-button
-        click_element(driver, driver.find_element(By.ID, "sia-otp-accordion-totp-header"))
-        # get sia-auth-app-formatted-secret
-        backup_code = driver.find_element(By.ID, "sia-auth-app-formatted-secret").text
-        
-        # get 2fa OTP code from secret
-        otp_2fa = get_2fa_code(backup_code)
-        if not otp_2fa:
-            logger.error(f"CẢNH BÁO: Không lấy được OTP 2FA cho {email}")
-            log_failed_account(email, "captcha.txt")
-            return False
-        
-        otp_field_2fa = WebDriverWait(driver, 10).until(EC.presence_of_element_located((By.ID, "ch-auth-app-code-input")))
-        human_type(otp_field_2fa, otp_2fa)
-        formConfirm =  WebDriverWait(driver, 10).until(EC.presence_of_element_located((By.ID, "sia-add-auth-app-form")))
-        formConfirm.submit()
-        
-        # Kiểm tra CAPTCHA lần nữa
-        if not handle_captcha(driver, email):
-            log_failed_account(email, "captcha.txt")
-            return False
-
-        # Confirm button enable-mfa-form-submit
-        enable_chechbox = driver.find_element(By.NAME, "trustThisDevice")
-        click_element(driver, enable_chechbox)
-        enable_2fa_form = WebDriverWait(driver, 10).until(EC.presence_of_element_located((By.ID, "enable-mfa-form")))
-        enable_2fa_form.submit()
-        
-        # Kiểm tra CAPTCHA lần nữa
-        if not handle_captcha(driver, email):
-            log_failed_account(email, "captcha.txt")
-            return False
-
-        
         # Điều hướng đến sổ địa chỉ
         driver.get(getattr(config, "amazon_add_link","https://www.amazon.com/a/addresses/add?ref=ya_address_book_add_button"))
-        wait.until(
-                lambda d: d.execute_script('return document.readyState') == 'complete'
-        )
+        
         # Thêm địa chỉ
         try:
-            # address_field = driver.find_element(By.ID, "address-ui-widgets-enterAddressFullName")
-            # human_type(address_field, username)
+            address_field = driver.find_element(By.ID, "address-ui-widgets-enterAddressFullName")
+            human_type(address_field, username)
             
             phone_field = driver.find_element(By.ID, "address-ui-widgets-enterAddressPhoneNumber")
             human_type(phone_field, sdt)
@@ -492,12 +426,7 @@ def main():
         logger.error("CẢNH BÁO: Không tìm thấy apikey. Vui lý nhập apikey.txt")
         return
     logger.info(f"API key: {apikey}")
-    try:
-        num_accounts = int(input("🔢 Nhập số tài khoản cần tạo: "))
-        max_threads = int(input("⚙️ Nhập số luồng chạy mỗi lần: "))
-    except ValueError:
-        logger.error("❌ Giá trị nhập vào không hợp lệ. Vui lòng nhập số nguyên.")
-        return
+    num_accounts = int(input("Nhập số tài khoản cần tạo: "))
     
     # Khởi tạo ShopGmailAPI
     shopgmail_api = ShopGmailAPI(apikey)
@@ -511,26 +440,18 @@ def main():
     
     # Đảm bảo đủ đầu vào
     min_length = min(len(usernames), len(sdts), len(addresses), len(passwords), num_accounts)
-    if min_length == 0:
-        logger.error("❌ Dữ liệu đầu vào không đủ để xử lý.")
-        return
-    max_threads = min(max_threads, min_length)
-    logger.info(f"🔧 Sẽ xử lý {min_length} tài khoản với {max_threads} luồng")
+    logger.info(f"THÔNG TIN: Sẽ xử lý {min_length} tài khoản")
+    
     # Xử lý tài khoản đồng thời
-    with ThreadPoolExecutor(max_workers=max_threads) as executor:
+    with ThreadPoolExecutor(max_workers=20) as executor:
         futures = []
         for i in range(min_length):
-            proxy = proxies[i % len(proxies)].strip() if proxies else ""
-            futures.append(executor.submit(
-                register_and_cleanup,
-                i, usernames[i], sdts[i], addresses[i], proxy, passwords[i], shopgmail_api
-            ))
-            time.sleep(1)
+            proxie = proxies[min_length % len(proxies)].strip()
+            futures.append(executor.submit(register_and_cleanup, i, usernames[i], sdts[i], addresses[i], proxie, passwords[i], shopgmail_api))
+            time.sleep(2)
 
         for future in futures:
             future.result()
-
-    logger.info("🎉 Hoàn tất xử lý toàn bộ tài khoản.")
 
 if __name__ == "__main__":
     main()
