@@ -421,6 +421,9 @@ def register_amazon(email, orderid, username, proxy, password, shopgmail_api):
         if not handle_captcha(driver, email):
             log_failed_account(email, "captcha.txt")
             return False
+        save_account(email, password, backup_code)
+        logger.info(f"THÔNG TIN: Đăng ký thành công {email}")
+        return True
     except Exception as e:
         logger.error(f"CẢNH BÁO: Lỗi khi xử lý {email}: {str(e)}\n{traceback.format_exc()}")
         log_failed_account(email, "captcha.txt")
