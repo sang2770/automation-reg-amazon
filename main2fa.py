@@ -18,7 +18,7 @@ from selenium.common.exceptions import TimeoutException, WebDriverException
 import traceback
 import threading
 
-service = Service(ChromeDriverManager(driver_version="135.0.7049.95").install())
+service = Service(ChromeDriverManager(driver_version="134.0.6998.166").install())
 
 # Hàm đọc config.json
 def read_config(file_path):
@@ -53,7 +53,7 @@ class GemLoginAPI:
             "is_masked_media_device": True,
             "os": {"type": "Android", "version": "14"},
             "webrtc_mode": 2,
-            "browser_version": "135",
+            "browser_version": "134",
             "browser_type": "chrome",
             "language": "en",
             "time_zone": "America/New_York",
