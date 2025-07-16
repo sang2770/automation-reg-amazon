@@ -168,7 +168,7 @@ def handle_captcha(driver, email):
 
 # Hàm mô phỏng gõ giống con người
 def human_type(element, text):
-    for i, char in text:
+    for i, char in enumerate(text):  # ✅ SỬA chỗ này
         element.send_keys(char)
         if i % random.randint(3, 7) == 0:
             time.sleep(random.uniform(0.5, 1.0))  # Nghỉ lâu hơn
