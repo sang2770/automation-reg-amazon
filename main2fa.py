@@ -277,7 +277,6 @@ def register_amazon(email, orderid, username, proxy, password, shopgmail_api):
     gemlogin = GemLoginAPI()
 
     # Tạo Gmail mới
-    email, orderid = shopgmail_api.create_gmail_account()
     if not email or not orderid:
         logger.error("CẢNH BÁO: Không thể tạo Gmail mới")
         return False

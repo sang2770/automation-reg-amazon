@@ -277,7 +277,6 @@ def register_amazon(email, orderid, username, sdt, address, proxy, password, sho
     gemlogin = GemLoginAPI()
     
     # Tạo Gmail mới
-    email, orderid = shopgmail_api.create_gmail_account()
     if not email or not orderid:
         logger.error("CẢNH BÁO: Không thể tạo Gmail mới")
         return False
@@ -410,9 +409,9 @@ def register_amazon(email, orderid, username, sdt, address, proxy, password, sho
             logger.error(f"CẢNH BÁO: Không xóa được cấu hình {profile_id} cho {email}")
 
 
-def register_and_cleanup(i, username, sdt, address, proxy, password, api):
+def register_and_cleanup(i, email, orderid, username, sdt, address, proxy, password, api):
     try:
-        success = register_amazon(username, sdt, address, proxy, password, api)
+        success = register_amazon(email, orderid, username, sdt, address, proxy, password, api)
         if success:
             remove_line("username.txt", i)
             remove_line("sdt.txt", i)
@@ -420,7 +419,6 @@ def register_and_cleanup(i, username, sdt, address, proxy, password, api):
             remove_line("password.txt", i)
     except Exception as e:
         logger.error(f"Lỗi xử lý tài khoản {i}: {e}")
-
 
 
 def worker(index, proxy, username, sdt, address, password, shopgmail_api):
