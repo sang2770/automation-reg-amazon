@@ -116,10 +116,10 @@ class ShopGmailAPI:
                     logger.warning(f"CẢNH BÁO: Lỗi khi tạo Gmail: {data.get('msg')}")
                     return None, None
             else:
-                logger.error(f"CẢNH BÁO: Lỗi khi gọi API CreateOrder: {response.status_code} - {response.text}")
+                logger.warning(f"CẢNH BÁO: Lỗi khi gọi API CreateOrder: {response.status_code} - {response.text}")
                 return None, None
         except Exception as e:
-            logger.error(f"CẢNH BÁO: Lỗi khi gọi API CreateOrder: {str(e)}")
+            logger.warning(f"CẢNH BÁO: Lỗi khi gọi API CreateOrder: {str(e)}")
             return None, None
 
     def get_otp(self, orderid):
@@ -168,10 +168,13 @@ def handle_captcha(driver, email):
 
 # Hàm mô phỏng gõ giống con người
 def human_type(element, text):
-    for char in text:
+    for i, char in text:
         element.send_keys(char)
-        time.sleep(random.uniform(0.1, 0.3))
-
+        if i % random.randint(3, 7) == 0:
+            time.sleep(random.uniform(0.5, 1.0))  # Nghỉ lâu hơn
+        else:
+            time.sleep(random.uniform(0.2, 0.4))  # Gõ chậm hơn bình thường
+    time.sleep(random.uniform(2, 3))
 # Hàm đọc dòng từ tệp
 def read_file(file_path):
     try:
@@ -269,9 +272,10 @@ def select_autocomplete(driver):
         logger.info("THÔNG TIN: Không tìm thấy autocomplete, tiếp tục nhập địa chỉ")
 
 # Hàm đăng ký Amazon chính
-def register_amazon(username, sdt, address, proxy, password, shopgmail_api):
+
+def register_amazon(email, orderid, username, proxy, password, shopgmail_api):
     gemlogin = GemLoginAPI()
-    
+
     # Tạo Gmail mới
     email, orderid = shopgmail_api.create_gmail_account()
     if not email or not orderid:
@@ -429,17 +433,33 @@ def register_amazon(username, sdt, address, proxy, password, shopgmail_api):
             logger.error(f"CẢNH BÁO: Không xóa được cấu hình {profile_id} cho {email}")
 
 
-def register_and_cleanup(i, username, sdt, address, proxy, password, api):
+def register_and_cleanup(i, email, orderid, username, proxy, password, api):
     try:
-        success = register_amazon(username, sdt, address, proxy, password, api)
+        success = register_amazon(email, orderid, username, proxy, password, api)
         if success:
             remove_line("username.txt", i)
-            remove_line("sdt.txt", i)
-            remove_line("add.txt", i)
             remove_line("password.txt", i)
     except Exception as e:
         logger.error(f"Lỗi xử lý tài khoản {i}: {e}")
 
+
+def worker(index, proxy, username, password, shopgmail_api):
+    try:
+        # Tạo Gmail
+        while True:
+            try:
+                email, orderid = shopgmail_api.create_gmail_account()
+                if email and orderid:
+                    break
+                time.sleep(random.uniform(1, 3))
+            except Exception:
+                time.sleep(random.uniform(1, 3))
+
+        # Gọi hàm xử lý
+        register_and_cleanup(index, email, orderid, username, proxy, password, shopgmail_api)
+
+    except Exception as e:
+        logger.error(f"Lỗi ở luồng {index}: {e}")
 
 # Hàm chính
 def main():
@@ -462,13 +482,11 @@ def main():
     
     # Tải tệp đầu vào
     usernames = read_file("username.txt")
-    sdts = read_file("sdt.txt")
-    addresses = read_file("add.txt")
     proxies = read_file("proxy.txt")
     passwords = read_file("password.txt")
     
     # Đảm bảo đủ đầu vào
-    min_length = min(len(usernames), len(sdts), len(addresses), len(passwords), num_accounts)
+    min_length = min(len(usernames), len(passwords), num_accounts)
     if min_length == 0:
         logger.error("❌ Dữ liệu đầu vào không đủ để xử lý.")
         return
@@ -480,8 +498,8 @@ def main():
         for i in range(min_length):
             proxy = proxies[i % len(proxies)].strip() if proxies else ""
             futures.append(executor.submit(
-                register_and_cleanup,
-                i, usernames[i], sdts[i], addresses[i], proxy, passwords[i], shopgmail_api
+                worker,
+                i, proxy, usernames[i], passwords[i], shopgmail_api
             ))
             time.sleep(1)
 

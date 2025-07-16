@@ -116,10 +116,10 @@ class ShopGmailAPI:
                     logger.warning(f"CẢNH BÁO: Lỗi khi tạo Gmail: {data.get('msg')}")
                     return None, None
             else:
-                logger.error(f"CẢNH BÁO: Lỗi khi gọi API CreateOrder: {response.status_code} - {response.text}")
+                logger.warning(f"CẢNH BÁO: Lỗi khi gọi API CreateOrder: {response.status_code} - {response.text}.Tiến hành tạo lại..." )
                 return None, None
         except Exception as e:
-            logger.error(f"CẢNH BÁO: Lỗi khi gọi API CreateOrder: {str(e)}")
+            logger.warning(f"CẢNH BÁO: Lỗi khi gọi API CreateOrder: {str(e)}. Tiến hành tạo lại...")
             return None, None
 
     def get_otp(self, orderid):
@@ -168,9 +168,13 @@ def handle_captcha(driver, email):
 
 # Hàm mô phỏng gõ giống con người
 def human_type(element, text):
-    for char in text:
+    for i, char in text:
         element.send_keys(char)
-        time.sleep(random.uniform(0.1, 0.3))
+        if i % random.randint(3, 7) == 0:
+            time.sleep(random.uniform(0.5, 1.0))  # Nghỉ lâu hơn
+        else:
+            time.sleep(random.uniform(0.2, 0.4))  # Gõ chậm hơn bình thường
+    time.sleep(random.uniform(2, 3))
 
 # Hàm đọc dòng từ tệp
 def read_file(file_path):
@@ -269,15 +273,12 @@ def select_autocomplete(driver):
         logger.info("THÔNG TIN: Không tìm thấy autocomplete, tiếp tục nhập địa chỉ")
 
 # Hàm đăng ký Amazon chính
-def register_amazon(username, sdt, address, proxy, password, shopgmail_api):
+def register_amazon(email, orderid, username, sdt, address, proxy, password, shopgmail_api):
     gemlogin = GemLoginAPI()
-    
-    # Tạo Gmail mới
-    email, orderid = shopgmail_api.create_gmail_account()
+
     if not email or not orderid:
         logger.error("CẢNH BÁO: Không thể tạo Gmail mới")
         return False
-    
     # Tạo cấu hình mới
     profile_id = gemlogin.create_profile(proxy, f"Profile_{email}")
     if not profile_id:
@@ -307,7 +308,7 @@ def register_amazon(username, sdt, address, proxy, password, shopgmail_api):
         wait = WebDriverWait(driver, 10)
         def handle_reg_link(start_link):
             driver.get(start_link)
-            time.sleep(10)
+            time.sleep(15)
             if "www.amazon.com/amazonprime" in start_link:
                 form = wait.until(
                     EC.presence_of_element_located((By.CSS_SELECTOR, 'form[action="/gp/prime/pipeline/membersignup"]'))
@@ -465,9 +466,9 @@ def register_amazon(username, sdt, address, proxy, password, shopgmail_api):
             logger.error(f"CẢNH BÁO: Không xóa được cấu hình {profile_id} cho {email}")
 
 
-def register_and_cleanup(i, username, sdt, address, proxy, password, api):
+def register_and_cleanup(i, email, orderid, username, sdt, address, proxy, password, api):
     try:
-        success = register_amazon(username, sdt, address, proxy, password, api)
+        success = register_amazon(email, orderid, username, sdt, address, proxy, password, api)
         if success:
             remove_line("username.txt", i)
             remove_line("sdt.txt", i)
@@ -476,6 +477,25 @@ def register_and_cleanup(i, username, sdt, address, proxy, password, api):
     except Exception as e:
         logger.error(f"Lỗi xử lý tài khoản {i}: {e}")
 
+
+
+def worker(index, proxy, username, sdt, address, password, shopgmail_api):
+    try:
+        # Tạo Gmail
+        while True:
+            try:
+                email, orderid = shopgmail_api.create_gmail_account()
+                if email and orderid:
+                    break
+                time.sleep(random.uniform(1, 3))
+            except Exception:
+                time.sleep(random.uniform(1, 3))
+
+        # Gọi hàm xử lý
+        register_and_cleanup(index, email, orderid, username, sdt, address, proxy, password, shopgmail_api)
+
+    except Exception as e:
+        logger.error(f"Lỗi ở luồng {index}: {e}")
 
 # Hàm chính
 def main():
@@ -516,8 +536,8 @@ def main():
         for i in range(min_length):
             proxy = proxies[i % len(proxies)].strip() if proxies else ""
             futures.append(executor.submit(
-                register_and_cleanup,
-                i, usernames[i], sdts[i], addresses[i], proxy, passwords[i], shopgmail_api
+                worker,
+                i, proxy, usernames[i], sdts[i], addresses[i], passwords[i], shopgmail_api
             ))
             time.sleep(1)
 
