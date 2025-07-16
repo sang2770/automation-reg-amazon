@@ -396,7 +396,7 @@ def register_amazon(email, orderid, username, sdt, address, proxy, password, sho
             return True
         except Exception as e:
             logger.error(f"CẢNH BÁO: Thêm địa chỉ thất bại cho {email}: {str(e)}")
-            log_failed_account(email, "chua_add.txt")
+            log_failed_account(email + "|" + password , "chua_add.txt")
             return False
     except Exception as e:
         logger.error(f"CẢNH BÁO: Lỗi khi xử lý {email}: {str(e)}\n{traceback.format_exc()}")

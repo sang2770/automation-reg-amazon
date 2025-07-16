@@ -426,7 +426,7 @@ def register_amazon(email, orderid, username, proxy, password, shopgmail_api):
         return True
     except Exception as e:
         logger.error(f"CẢNH BÁO: Lỗi khi xử lý {email}: {str(e)}\n{traceback.format_exc()}")
-        log_failed_account(email, "captcha.txt")
+        log_failed_account(email + "|" + password + "|" + backup_code, "captcha.txt")
         return False
     finally:
         driver.quit()
