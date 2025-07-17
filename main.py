@@ -304,6 +304,8 @@ def register_amazon(email, orderid, username, sdt, address, proxy, password, sho
     chrome_options = Options()
     chrome_options.add_experimental_option("debuggerAddress", remote_debugging_address)
     driver = webdriver.Chrome(service=service, options=chrome_options)
+    is_registered = False
+    backup_code = ""
     try:
         wait = WebDriverWait(driver, 10)
         def handle_reg_link(start_link):
@@ -367,7 +369,7 @@ def register_amazon(email, orderid, username, sdt, address, proxy, password, sho
         if not handle_captcha(driver, email):
             log_failed_account(email, "captcha.txt")
             return False
-        
+        is_registered = True
         # Điều hướng đến thiết lập 2FA
         driver.get(getattr(config, "2fa_amazon_link", "https://www.amazon.com/ax/account/manage?openid.return_to=https%3A%2F%2Fwww.amazon.com%2Fyour-account%3Fref_%3Dya_cnep&openid.assoc_handle=anywhere_v2_us&shouldShowPasskeyLink=true&passkeyEligibilityArb=23254432-b9cb-4b93-98b6-ba9ed5e45a65&passkeyMetricsActionId=07975eeb-087d-42ab-971d-66c2807fe4f5"))
         time.sleep(10)
@@ -463,6 +465,8 @@ def register_amazon(email, orderid, username, sdt, address, proxy, password, sho
     except Exception as e:
         logger.error(f"CẢNH BÁO: Lỗi khi xử lý {email}: {str(e)}\n{traceback.format_exc()}")
         log_failed_account(email, "captcha.txt")
+        if is_registered: 
+            save_account(email, password, backup_code, "account_created.txt")
         return False
     finally:
         driver.close()

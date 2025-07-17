@@ -306,6 +306,8 @@ def register_amazon(email, orderid, username, proxy, password, shopgmail_api):
     chrome_options = Options()
     chrome_options.add_experimental_option("debuggerAddress", remote_debugging_address)
     driver = webdriver.Chrome(service=service, options=chrome_options)
+    is_registered = False
+    backup_code = ""
     try:
         def handle_reg_link(start_link):
             if not driver.session_id:
@@ -430,6 +432,8 @@ def register_amazon(email, orderid, username, proxy, password, shopgmail_api):
     except Exception as e:
         logger.error(f"CẢNH BÁO: Lỗi khi xử lý {email}: {str(e)}\n{traceback.format_exc()}")
         log_failed_account(email + "|" + password + "|" + backup_code, "captcha.txt")
+        if is_registered:
+            save_account(email, password, backup_code, "account_created.txt")
         return False
     finally:
         driver.close()

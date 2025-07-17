@@ -306,6 +306,7 @@ def register_amazon(email, orderid, username, sdt, address, proxy, password, sho
     chrome_options = Options()
     chrome_options.add_experimental_option("debuggerAddress", remote_debugging_address)
     driver = webdriver.Chrome(service=service, options=chrome_options)
+    is_registered = False
     try:
         def handle_reg_link(start_link):
             if not driver.session_id:
@@ -368,6 +369,7 @@ def register_amazon(email, orderid, username, sdt, address, proxy, password, sho
             log_failed_account(email, "captcha.txt")
             return False
         
+        is_registered = True
         # Điều hướng đến sổ địa chỉ
         driver.get(getattr(config, "amazon_add_link","https://www.amazon.com/a/addresses/add?ref=ya_address_book_add_button"))
         time.sleep(10)
@@ -404,6 +406,8 @@ def register_amazon(email, orderid, username, sdt, address, proxy, password, sho
     except Exception as e:
         logger.error(f"CẢNH BÁO: Lỗi khi xử lý {email}: {str(e)}\n{traceback.format_exc()}")
         log_failed_account(email, "captcha.txt")
+        if is_registered:
+            save_account(email, password, "", "account_created.txt")
         return False
     finally:
         driver.close()
