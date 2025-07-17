@@ -308,6 +308,9 @@ def register_amazon(email, orderid, username, proxy, password, shopgmail_api):
     driver = webdriver.Chrome(service=service, options=chrome_options)
     try:
         def handle_reg_link(start_link):
+            if not driver.session_id:
+                logger.error(f"Phiên làm việc gemLogin đã chết hoặc chưa được khởi tạo với {email}")
+                return False
             driver.get(start_link)
             time.sleep(10)
             wait = WebDriverWait(driver, 10)
@@ -429,7 +432,7 @@ def register_amazon(email, orderid, username, proxy, password, shopgmail_api):
         log_failed_account(email + "|" + password + "|" + backup_code, "captcha.txt")
         return False
     finally:
-        driver.quit()
+        driver.close()
         gemlogin.close_profile(profile_id)
         if not gemlogin.delete_profile(profile_id):
             logger.error(f"CẢNH BÁO: Không xóa được cấu hình {profile_id} cho {email}")

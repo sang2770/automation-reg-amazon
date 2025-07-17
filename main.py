@@ -236,8 +236,8 @@ def click_element(driver, element, timeout=10):
         logger.error("Timeout chờ element có thể click")
     except WebDriverException as e:
         logger.warning(f"Click bằng JS thất bại: {e}, thử dùng ActionChains...")
+        time.sleep(2)
         try:
-            from selenium.webdriver import ActionChains
             ActionChains(driver).move_to_element(element).click().perform()
         except Exception as ex:
             logger.error(f"Không thể chọn element bằng ActionChains: {ex}")
@@ -307,6 +307,9 @@ def register_amazon(email, orderid, username, sdt, address, proxy, password, sho
     try:
         wait = WebDriverWait(driver, 10)
         def handle_reg_link(start_link):
+            if not driver.session_id:
+                logger.error(f"Phiên làm việc gemLogin đã chết hoặc chưa được khởi tạo với {email}")
+                return False
             driver.get(start_link)
             time.sleep(15)
             if "www.amazon.com/amazonprime" in start_link:
@@ -355,9 +358,10 @@ def register_amazon(email, orderid, username, sdt, address, proxy, password, sho
             log_failed_account(email, "captcha.txt")
             return False
         
-        otp_field = WebDriverWait(driver, 10).until(EC.presence_of_element_located((By.ID, "cvf-input-code")))
+        otp_field = wait.until(EC.presence_of_element_located((By.ID, "cvf-input-code")))
         human_type(otp_field, otp)
-        click_element(driver, driver.find_element(By.CSS_SELECTOR, "input[aria-label='Verify OTP Button']"))
+        verify_button = wait.until(EC.presence_of_element_located((By.CSS_SELECTOR, "input[aria-label='Verify OTP Button']")))
+        click_element(driver, verify_button)
         
         # Kiểm tra CAPTCHA lần nữa
         if not handle_captcha(driver, email):
@@ -368,7 +372,7 @@ def register_amazon(email, orderid, username, sdt, address, proxy, password, sho
         driver.get(getattr(config, "2fa_amazon_link", "https://www.amazon.com/ax/account/manage?openid.return_to=https%3A%2F%2Fwww.amazon.com%2Fyour-account%3Fref_%3Dya_cnep&openid.assoc_handle=anywhere_v2_us&shouldShowPasskeyLink=true&passkeyEligibilityArb=23254432-b9cb-4b93-98b6-ba9ed5e45a65&passkeyMetricsActionId=07975eeb-087d-42ab-971d-66c2807fe4f5"))
         time.sleep(10)
         # Kích hoạt 2FA
-        WebDriverWait(driver, 10).until(EC.element_to_be_clickable((By.ID, "TWO_STEP_VERIFICATION_BUTTON"))).click()
+        wait.until(EC.element_to_be_clickable((By.ID, "TWO_STEP_VERIFICATION_BUTTON"))).click()
         
         time.sleep(5)  # Wait for the page to load
         # get OTP again
@@ -380,7 +384,7 @@ def register_amazon(email, orderid, username, sdt, address, proxy, password, sho
         
         otp_field_2fa = driver.find_element(By.ID, "input-box-otp")
         human_type(otp_field_2fa, otp_2fa)
-        formConfirm =  WebDriverWait(driver, 10).until(EC.presence_of_element_located((By.ID, "verification-code-form")))
+        formConfirm =  wait.until(EC.presence_of_element_located((By.ID, "verification-code-form")))
         formConfirm.submit()
         
         # Kiểm tra CAPTCHA lần nữa
@@ -389,7 +393,8 @@ def register_amazon(email, orderid, username, sdt, address, proxy, password, sho
             return False
         
         # Id cvf-submit-otp-button
-        click_element(driver, driver.find_element(By.ID, "sia-otp-accordion-totp-header"))
+        section_otp = wait.until(EC.presence_of_element_located((By.ID, "sia-otp-accordion-totp-header")))
+        click_element(driver, section_otp)
         # get sia-auth-app-formatted-secret
         backup_code = driver.find_element(By.ID, "sia-auth-app-formatted-secret").text
         
@@ -400,9 +405,9 @@ def register_amazon(email, orderid, username, sdt, address, proxy, password, sho
             log_failed_account(email, "captcha.txt")
             return False
         
-        otp_field_2fa = WebDriverWait(driver, 10).until(EC.presence_of_element_located((By.ID, "ch-auth-app-code-input")))
+        otp_field_2fa = wait.until(EC.presence_of_element_located((By.ID, "ch-auth-app-code-input")))
         human_type(otp_field_2fa, otp_2fa)
-        formConfirm =  WebDriverWait(driver, 10).until(EC.presence_of_element_located((By.ID, "sia-add-auth-app-form")))
+        formConfirm =  wait.until(EC.presence_of_element_located((By.ID, "sia-add-auth-app-form")))
         formConfirm.submit()
         
         # Kiểm tra CAPTCHA lần nữa
@@ -411,9 +416,9 @@ def register_amazon(email, orderid, username, sdt, address, proxy, password, sho
             return False
 
         # Confirm button enable-mfa-form-submit
-        enable_chechbox = driver.find_element(By.NAME, "trustThisDevice")
+        enable_chechbox = wait.until(EC.presence_of_element_located((By.NAME, "trustThisDevice")))
         click_element(driver, enable_chechbox)
-        enable_2fa_form = WebDriverWait(driver, 10).until(EC.presence_of_element_located((By.ID, "enable-mfa-form")))
+        enable_2fa_form = wait.until(EC.presence_of_element_located((By.ID, "enable-mfa-form")))
         enable_2fa_form.submit()
         
         # Kiểm tra CAPTCHA lần nữa
@@ -430,7 +435,7 @@ def register_amazon(email, orderid, username, sdt, address, proxy, password, sho
             # address_field = driver.find_element(By.ID, "address-ui-widgets-enterAddressFullName")
             # human_type(address_field, username)
             
-            phone_field = driver.find_element(By.ID, "address-ui-widgets-enterAddressPhoneNumber")
+            phone_field = wait.until(EC.presence_of_element_located((By.ID, "address-ui-widgets-enterAddressPhoneNumber")))
             human_type(phone_field, sdt)
             
             address_lines = address.split(", ")
@@ -439,7 +444,7 @@ def register_amazon(email, orderid, username, sdt, address, proxy, password, sho
             if len(address_lines) > 1:
                 driver.find_element(By.ID, "address-ui-widgets-enterAddressLine2").send_keys(address_lines[1])
             # submit form address-ui-address-form
-            formConfirm =  WebDriverWait(driver, 10).until(EC.presence_of_element_located((By.ID, "address-ui-address-form")))
+            formConfirm =  wait.until(EC.presence_of_element_located((By.ID, "address-ui-address-form")))
             formConfirm.submit()
             
             # Kiểm tra CAPTCHA lần nữa
@@ -460,7 +465,7 @@ def register_amazon(email, orderid, username, sdt, address, proxy, password, sho
         log_failed_account(email, "captcha.txt")
         return False
     finally:
-        driver.quit()
+        driver.close()
         gemlogin.close_profile(profile_id)
         if not gemlogin.delete_profile(profile_id):
             logger.error(f"CẢNH BÁO: Không xóa được cấu hình {profile_id} cho {email}")
