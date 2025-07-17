@@ -369,12 +369,12 @@ def register_amazon(email, orderid, username, sdt, address, proxy, password, sho
         if not handle_captcha(driver, email):
             log_failed_account(email, "captcha.txt")
             return False
-        is_registered = True
         # Điều hướng đến thiết lập 2FA
         driver.get(getattr(config, "2fa_amazon_link", "https://www.amazon.com/ax/account/manage?openid.return_to=https%3A%2F%2Fwww.amazon.com%2Fyour-account%3Fref_%3Dya_cnep&openid.assoc_handle=anywhere_v2_us&shouldShowPasskeyLink=true&passkeyEligibilityArb=23254432-b9cb-4b93-98b6-ba9ed5e45a65&passkeyMetricsActionId=07975eeb-087d-42ab-971d-66c2807fe4f5"))
         time.sleep(10)
         # Kích hoạt 2FA
         wait.until(EC.element_to_be_clickable((By.ID, "TWO_STEP_VERIFICATION_BUTTON"))).click()
+        is_registered = True
         
         time.sleep(5)  # Wait for the page to load
         # get OTP again

@@ -369,10 +369,11 @@ def register_amazon(email, orderid, username, sdt, address, proxy, password, sho
             log_failed_account(email, "captcha.txt")
             return False
         
-        is_registered = True
+
         # Điều hướng đến sổ địa chỉ
         driver.get(getattr(config, "amazon_add_link","https://www.amazon.com/a/addresses/add?ref=ya_address_book_add_button"))
         time.sleep(10)
+        is_registered = True
         # Thêm địa chỉ
         try:
             address_field = driver.find_element(By.ID, "address-ui-widgets-enterAddressFullName")
