@@ -324,6 +324,12 @@ def register_amazon(email, orderid, username, sdt, address, proxy, password, sho
                             EC.presence_of_element_located((By.CSS_SELECTOR, 'form[action="/gp/prime/pipeline/membersignup"]'))
                         )
                         form.submit()
+                    elif "sellercentral.amazon.com" in start_link:
+                        sign_up_button = wait.until(
+                            EC.element_to_be_clickable((By.CSS_SELECTOR, "button.nav-link-button.nav-link-primary-button"))
+                        )
+                        sign_up_button.click()
+                        time.sleep(5)
 
                     # Chọn Tạo tài khoản
                     create_account_button = wait.until(EC.presence_of_element_located((By.ID, "register_accordion_header")))
