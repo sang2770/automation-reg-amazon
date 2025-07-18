@@ -79,11 +79,12 @@ class GemLoginAPI:
 
     def delete_profile(self, profile_id):
         # Xóa cấu hình
-        response = self.session.get(f"{self.base_url}/api/profiles/delete/{profile_id}")
-        if response.status_code == 200 and response.json().get("success"):
-            return True
-        logger.error(f"CẢNH BÁO: Không xóa được cấu hình {profile_id} {response.json().get('message')}")
-        return False
+        # response = self.session.get(f"{self.base_url}/api/profiles/delete/{profile_id}")
+        # if response.status_code == 200 and response.json().get("success"):
+        #     return True
+        # logger.error(f"CẢNH BÁO: Không xóa được cấu hình {profile_id} {response.json().get('message')}")
+        # return False
+        return True
 
 # ShopGmail9999 API client
 class ShopGmailAPI:
@@ -116,7 +117,7 @@ class ShopGmailAPI:
                     logger.warning(f"CẢNH BÁO: Lỗi khi tạo Gmail: {data.get('msg')}")
                     return None, None
             else:
-                logger.warning(f"CẢNH BÁO: Lỗi khi gọi API CreateOrder: {response.status_code} - {response.text}.Tiến hành tạo lại..." )
+                # logger.warning(f"CẢNH BÁO: Lỗi khi gọi API CreateOrder: {response.status_code} - {response.text}.Tiến hành tạo lại..." )
                 return None, None
         except Exception as e:
             logger.warning(f"CẢNH BÁO: Lỗi khi gọi API CreateOrder: {str(e)}. Tiến hành tạo lại...")
@@ -308,39 +309,49 @@ def register_amazon(email, orderid, username, sdt, address, proxy, password, sho
     backup_code = ""
     try:
         wait = WebDriverWait(driver, 10)
+        
         def handle_reg_link(start_link):
-            if not driver.session_id:
-                logger.error(f"Phiên làm việc gemLogin đã chết hoặc chưa được khởi tạo với {email}")
-                return False
-            driver.get(start_link)
-            time.sleep(15)
-            if "www.amazon.com/amazonprime" in start_link:
-                form = wait.until(
-                    EC.presence_of_element_located((By.CSS_SELECTOR, 'form[action="/gp/prime/pipeline/membersignup"]'))
-                )
-                form.submit()
+            max_retry = 3
+            while max_retry > 0:
+                try:
+                    if not driver.session_id:
+                        logger.error(f"Phiên làm việc gemLogin đã chết hoặc chưa được khởi tạo với {email}")
+                        return False
+                    driver.get(start_link)
+                    time.sleep(15)
+                    if "www.amazon.com/amazonprime" in start_link:
+                        form = wait.until(
+                            EC.presence_of_element_located((By.CSS_SELECTOR, 'form[action="/gp/prime/pipeline/membersignup"]'))
+                        )
+                        form.submit()
 
-            # Chọn Tạo tài khoản
-            create_account_button = wait.until(EC.presence_of_element_located((By.ID, "register_accordion_header")))
-            click_element(driver, create_account_button)
-            # Điền biểu mẫu đăng ký
-            name_field = wait.until(EC.presence_of_element_located((By.ID, "ap_customer_name")))
-            human_type(name_field, username)
-            
-            email_field = driver.find_element(By.ID, "ap_email")
-            human_type(email_field, email)
-            
-            # password = ''.join(random.choices(string.ascii_letters + string.digits, k=12))
-            # password = "123456aA@Sang"
-            password_field = driver.find_element(By.ID, "ap_password")
-            human_type(password_field, password)
-            click_element(driver, driver.find_element(By.ID, "continue"))
-            
-            # Kiểm tra CAPTCHA
-            if not handle_captcha(driver, email):
+                    # Chọn Tạo tài khoản
+                    create_account_button = wait.until(EC.presence_of_element_located((By.ID, "register_accordion_header")))
+                    click_element(driver, create_account_button)
+                    # Điền biểu mẫu đăng ký
+                    name_field = wait.until(EC.presence_of_element_located((By.ID, "ap_customer_name")))
+                    human_type(name_field, username)
+                    
+                    email_field = driver.find_element(By.ID, "ap_email")
+                    human_type(email_field, email)
+                    
+                    # password = ''.join(random.choices(string.ascii_letters + string.digits, k=12))
+                    # password = "123456aA@Sang"
+                    password_field = driver.find_element(By.ID, "ap_password")
+                    human_type(password_field, password)
+                    click_element(driver, driver.find_element(By.ID, "continue"))
+                    
+                    # Kiểm tra CAPTCHA
+                    if not handle_captcha(driver, email):
+                        log_failed_account(email, "captcha.txt")
+                        return False
+                    return True
+                except Exception:
+                    max_retry -= 1
+            if max_retry == 0:
+                logger.error(f"CẢNH BÁO: Không tạo được tài khoản cho {email}")
                 log_failed_account(email, "captcha.txt")
                 return False
-            return True
         
         start_links = read_file("reg_link.txt")
         check = False
@@ -471,8 +482,8 @@ def register_amazon(email, orderid, username, sdt, address, proxy, password, sho
     finally:
         driver.close()
         gemlogin.close_profile(profile_id)
-        if not gemlogin.delete_profile(profile_id):
-            logger.error(f"CẢNH BÁO: Không xóa được cấu hình {profile_id} cho {email}")
+        # if not gemlogin.delete_profile(profile_id):
+        #     logger.error(f"CẢNH BÁO: Không xóa được cấu hình {profile_id} cho {email}")
 
 
 def register_and_cleanup(i, email, orderid, username, sdt, address, proxy, password, api):
