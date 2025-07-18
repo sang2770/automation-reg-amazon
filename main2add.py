@@ -311,7 +311,7 @@ def register_amazon(email, orderid, username, sdt, address, proxy, password, sho
     try:
         wait = WebDriverWait(driver, 10)
         def handle_reg_link(start_link):
-            max_retry = 3
+            max_retry = 5
             while max_retry > 0:
                 try:
                     if not driver.session_id:
