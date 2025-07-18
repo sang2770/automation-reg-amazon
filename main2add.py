@@ -326,7 +326,7 @@ def register_amazon(email, orderid, username, sdt, address, proxy, password, sho
                         form.submit()
                     elif "sellercentral.amazon.com" in start_link:
                         sign_up_button = wait.until(
-                            EC.element_to_be_clickable((By.CSS_SELECTOR, "button.nav-link-button.nav-link-primary-button"))
+                            EC.element_to_be_clickable((By.XPATH, "//button[contains(., 'Sign up')]"))
                         )
                         sign_up_button.click()
                         time.sleep(5)
