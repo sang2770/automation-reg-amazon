@@ -390,12 +390,17 @@ def register_amazon(email, orderid, username, sdt, address, proxy, password, sho
         driver.get(getattr(config, "2fa_amazon_link", "https://www.amazon.com/ax/account/manage?openid.return_to=https%3A%2F%2Fwww.amazon.com%2Fyour-account%3Fref_%3Dya_cnep&openid.assoc_handle=anywhere_v2_us&shouldShowPasskeyLink=true&passkeyEligibilityArb=23254432-b9cb-4b93-98b6-ba9ed5e45a65&passkeyMetricsActionId=07975eeb-087d-42ab-971d-66c2807fe4f5"))
         time.sleep(10)
         # Kích hoạt 2FA
+        is_registered = True
         try:
             wait.until(EC.element_to_be_clickable((By.ID, "TWO_STEP_VERIFICATION_BUTTON"))).click()
-        except Exception:
-            click_element(driver, driver.find_element(By.ID, "TWO_STEP_VERIFICATION_BUTTON"))
+        except Exception as e:
+            try:
+                click_element(driver, driver.find_element(By.ID, "TWO_STEP_VERIFICATION_BUTTON"))
+            except Exception as ex:
+                logger.error(f"Không thể kích hoạt 2FA: {ex}")
+                log_failed_account(email, "captcha.txt")
+                return False
 
-        is_registered = True
         time.sleep(5)  # Wait for the page to load
         # get OTP again
         otp_2fa = shopgmail_api.get_otp(orderid)
@@ -485,12 +490,12 @@ def register_amazon(email, orderid, username, sdt, address, proxy, password, sho
     except Exception as e:
         logger.error(f"CẢNH BÁO: Lỗi khi xử lý {email}: {str(e)}\n{traceback.format_exc()}")
         log_failed_account(email, "captcha.txt")
-        if is_registered: 
-            save_account(email, password, backup_code, "account_created.txt")
         return False
     finally:
         driver.close()
         gemlogin.close_profile(profile_id)
+        if is_registered: 
+            save_account(email, password, backup_code, "account_created.txt")
         # if not gemlogin.delete_profile(profile_id):
         #     logger.error(f"CẢNH BÁO: Không xóa được cấu hình {profile_id} cho {email}")
 
