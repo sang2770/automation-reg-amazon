@@ -237,8 +237,8 @@ def click_element(driver, element, timeout=10):
         logger.error("Timeout chờ element có thể click")
     except WebDriverException as e:
         logger.warning(f"Click bằng JS thất bại: {e}, thử dùng ActionChains...")
+        time.sleep(2)
         try:
-            from selenium.webdriver import ActionChains
             ActionChains(driver).move_to_element(element).click().perform()
         except Exception as ex:
             logger.error(f"Không thể chọn element bằng ActionChains: {ex}")
@@ -276,12 +276,10 @@ def select_autocomplete(driver):
 # Hàm đăng ký Amazon chính
 def register_amazon(email, orderid, username, sdt, address, proxy, password, shopgmail_api):
     gemlogin = GemLoginAPI()
-    
-    # Tạo Gmail mới
+
     if not email or not orderid:
         logger.error("CẢNH BÁO: Không thể tạo Gmail mới")
         return False
-    
     # Tạo cấu hình mới
     profile_id = gemlogin.create_profile(proxy, f"Profile_{email}")
     if not profile_id:
@@ -308,8 +306,10 @@ def register_amazon(email, orderid, username, sdt, address, proxy, password, sho
     chrome_options.add_experimental_option("debuggerAddress", remote_debugging_address)
     driver = webdriver.Chrome(service=service, options=chrome_options)
     is_registered = False
+    backup_code = ""
     try:
         wait = WebDriverWait(driver, 10)
+        
         def handle_reg_link(start_link):
             max_retry = 5
             while max_retry > 0:
@@ -328,14 +328,12 @@ def register_amazon(email, orderid, username, sdt, address, proxy, password, sho
                         btn_sign_ins = driver.find_elements(By.TAG_NAME, "button")
                         sign_up_btn = next((btn for btn in btn_sign_ins if btn.text.strip() == 'Sign up'), None)
                         if sign_up_btn:
-                            # sign_up_btn.click()
-                            click_element(driver, sign_up_btn)
-                            logger.info(f"TxxxxHÔNG TIN: Tạo tài khoản cho {email}")
+                            sign_up_btn.click()
                         else:
                             logger.error(f"Không tìm thấy button Sign up")
                             max_retry -= 1
                             continue
-                    logger.info(f"THÔNG TIN: Tạo tài khoản cho {email}")
+                        time.sleep(5)
 
                     # Chọn Tạo tài khoản
                     create_account_button = wait.until(EC.presence_of_element_located((By.ID, "register_accordion_header")))
@@ -343,10 +341,10 @@ def register_amazon(email, orderid, username, sdt, address, proxy, password, sho
                     # Điền biểu mẫu đăng ký
                     name_field = wait.until(EC.presence_of_element_located((By.ID, "ap_customer_name")))
                     human_type(name_field, username)
-                    
+                    time.sleep(5)
                     email_field = driver.find_element(By.ID, "ap_email")
-                    human_type(email_field, email)
-                    
+                    email_field.send_keys(email)
+                    time.sleep(5)        
                     # password = ''.join(random.choices(string.ascii_letters + string.digits, k=12))
                     # password = "123456aA@Sang"
                     password_field = driver.find_element(By.ID, "ap_password")
@@ -371,6 +369,7 @@ def register_amazon(email, orderid, username, sdt, address, proxy, password, sho
             if handle_reg_link(start_link):
                 check = True
                 break
+            time.sleep(random.uniform(1, 3))
         if not check:
             logger.error(f"CẢNH BÁO: Không tạo được tài khoản cho {email}")
             log_failed_account(email, "captcha.txt")
@@ -382,26 +381,92 @@ def register_amazon(email, orderid, username, sdt, address, proxy, password, sho
             log_failed_account(email, "captcha.txt")
             return False
         
-        otp_field = WebDriverWait(driver, 10).until(EC.presence_of_element_located((By.ID, "cvf-input-code")))
+        otp_field = wait.until(EC.presence_of_element_located((By.ID, "cvf-input-code")))
         human_type(otp_field, otp)
-        click_element(driver, driver.find_element(By.CSS_SELECTOR, "input[aria-label='Verify OTP Button']"))
+        verify_button = wait.until(EC.presence_of_element_located((By.CSS_SELECTOR, "input[aria-label='Verify OTP Button']")))
+        click_element(driver, verify_button)
+        
+        # Kiểm tra CAPTCHA lần nữa
+        if not handle_captcha(driver, email):
+            log_failed_account(email, "captcha.txt")
+            return False
+        # Điều hướng đến thiết lập 2FA
+        driver.get(getattr(config, "2fa_amazon_link", "https://www.amazon.com/ax/account/manage?openid.return_to=https%3A%2F%2Fwww.amazon.com%2Fyour-account%3Fref_%3Dya_cnep&openid.assoc_handle=anywhere_v2_us&shouldShowPasskeyLink=true&passkeyEligibilityArb=23254432-b9cb-4b93-98b6-ba9ed5e45a65&passkeyMetricsActionId=07975eeb-087d-42ab-971d-66c2807fe4f5"))
+        time.sleep(10)
+        # Kích hoạt 2FA
+        is_registered = True
+        try:
+            wait.until(EC.element_to_be_clickable((By.ID, "TWO_STEP_VERIFICATION_BUTTON"))).click()
+        except Exception as e:
+            try:
+                click_element(driver, driver.find_element(By.ID, "TWO_STEP_VERIFICATION_BUTTON"))
+            except Exception as ex:
+                logger.error(f"Không thể kích hoạt 2FA: {ex}")
+                log_failed_account(email, "captcha.txt")
+                return False
+
+        time.sleep(5)  # Wait for the page to load
+        # get OTP again
+        otp_2fa = shopgmail_api.get_otp(orderid)
+        if not otp_2fa:
+            logger.error(f"CẢNH BÁO: Không lý OTP 2FA cho {email}")
+            log_failed_account(email, "captcha.txt")
+            return False
+        
+        otp_field_2fa = driver.find_element(By.ID, "input-box-otp")
+        human_type(otp_field_2fa, otp_2fa)
+        formConfirm =  wait.until(EC.presence_of_element_located((By.ID, "verification-code-form")))
+        formConfirm.submit()
         
         # Kiểm tra CAPTCHA lần nữa
         if not handle_captcha(driver, email):
             log_failed_account(email, "captcha.txt")
             return False
         
+        # Id cvf-submit-otp-button
+        section_otp = wait.until(EC.presence_of_element_located((By.ID, "sia-otp-accordion-totp-header")))
+        click_element(driver, section_otp)
+        # get sia-auth-app-formatted-secret
+        backup_code = driver.find_element(By.ID, "sia-auth-app-formatted-secret").text
+        
+        # get 2fa OTP code from secret
+        otp_2fa = get_2fa_code(backup_code)
+        if not otp_2fa:
+            logger.error(f"CẢNH BÁO: Không lấy được OTP 2FA cho {email}")
+            log_failed_account(email, "captcha.txt")
+            return False
+        
+        otp_field_2fa = wait.until(EC.presence_of_element_located((By.ID, "ch-auth-app-code-input")))
+        human_type(otp_field_2fa, otp_2fa)
+        formConfirm =  wait.until(EC.presence_of_element_located((By.ID, "sia-add-auth-app-form")))
+        formConfirm.submit()
+        
+        # Kiểm tra CAPTCHA lần nữa
+        if not handle_captcha(driver, email):
+            log_failed_account(email, "captcha.txt")
+            return False
 
+        # Confirm button enable-mfa-form-submit
+        enable_chechbox = wait.until(EC.presence_of_element_located((By.NAME, "trustThisDevice")))
+        click_element(driver, enable_chechbox)
+        enable_2fa_form = wait.until(EC.presence_of_element_located((By.ID, "enable-mfa-form")))
+        enable_2fa_form.submit()
+        
+        # Kiểm tra CAPTCHA lần nữa
+        if not handle_captcha(driver, email):
+            log_failed_account(email, "captcha.txt")
+            return False
+
+        
         # Điều hướng đến sổ địa chỉ
         driver.get(getattr(config, "amazon_add_link","https://www.amazon.com/a/addresses/add?ref=ya_address_book_add_button"))
         time.sleep(10)
-        is_registered = True
         # Thêm địa chỉ
         try:
-            address_field = driver.find_element(By.ID, "address-ui-widgets-enterAddressFullName")
-            human_type(address_field, username)
+            # address_field = driver.find_element(By.ID, "address-ui-widgets-enterAddressFullName")
+            # human_type(address_field, username)
             
-            phone_field = driver.find_element(By.ID, "address-ui-widgets-enterAddressPhoneNumber")
+            phone_field = wait.until(EC.presence_of_element_located((By.ID, "address-ui-widgets-enterAddressPhoneNumber")))
             human_type(phone_field, sdt)
             
             address_lines = address.split(", ")
@@ -410,7 +475,7 @@ def register_amazon(email, orderid, username, sdt, address, proxy, password, sho
             if len(address_lines) > 1:
                 driver.find_element(By.ID, "address-ui-widgets-enterAddressLine2").send_keys(address_lines[1])
             # submit form address-ui-address-form
-            formConfirm =  WebDriverWait(driver, 10).until(EC.presence_of_element_located((By.ID, "address-ui-address-form")))
+            formConfirm =  wait.until(EC.presence_of_element_located((By.ID, "address-ui-address-form")))
             formConfirm.submit()
             
             # Kiểm tra CAPTCHA lần nữa
@@ -419,22 +484,22 @@ def register_amazon(email, orderid, username, sdt, address, proxy, password, sho
                 return False
             
             # # Lưu tài khoản thành công
-            save_account(email, password, "")
+            save_account(email, password, backup_code)
             logger.info(f"THÔNG TIN: Đăng ký thành công {email}")
             return True
         except Exception as e:
             logger.error(f"CẢNH BÁO: Thêm địa chỉ thất bại cho {email}: {str(e)}")
-            log_failed_account(email + "|" + password , "chua_add.txt")
+            log_failed_account(email + "|" + password + "|" + backup_code, "chua_add.txt")
             return False
     except Exception as e:
         logger.error(f"CẢNH BÁO: Lỗi khi xử lý {email}: {str(e)}\n{traceback.format_exc()}")
         log_failed_account(email, "captcha.txt")
-        if is_registered:
-            save_account(email, password, "", "account_created.txt")
         return False
     finally:
         driver.close()
         gemlogin.close_profile(profile_id)
+        if is_registered: 
+            save_account(email, password, backup_code, "account_created.txt")
         # if not gemlogin.delete_profile(profile_id):
         #     logger.error(f"CẢNH BÁO: Không xóa được cấu hình {profile_id} cho {email}")
 
@@ -449,6 +514,7 @@ def register_and_cleanup(i, email, orderid, username, sdt, address, proxy, passw
             remove_line("password.txt", i)
     except Exception as e:
         logger.error(f"Lỗi xử lý tài khoản {i}: {e}")
+
 
 
 def worker(index, proxy, username, sdt, address, password, shopgmail_api):

@@ -14,11 +14,11 @@ from log import logger
 from webdriver_manager.chrome import ChromeDriverManager
 import json
 from selenium.webdriver.chrome.service import Service
-from selenium.common.exceptions import TimeoutException, WebDriverException
+from selenium.common.exceptions import TimeoutException, WebDriverException, NoSuchElementException
 import traceback
 import threading
 
-service = Service(ChromeDriverManager(driver_version="134.0.6998.166").install())
+service = Service(ChromeDriverManager(driver_version="137.0.7151.122").install())
 
 # Hàm đọc config.json
 def read_config(file_path):
@@ -53,7 +53,7 @@ class GemLoginAPI:
             "is_masked_media_device": True,
             "os": {"type": "Android", "version": "14"},
             "webrtc_mode": 2,
-            "browser_version": "134",
+            "browser_version": "137",
             "browser_type": "chrome",
             "language": "en",
             "time_zone": "America/New_York",
@@ -132,7 +132,7 @@ class ShopGmailAPI:
             "getbody": False
         }
         try:
-            for _ in range(30):  # Thử tối đa 30 lần, cách nhau 5 giây
+            for _ in range(15):  # Thử tối đa 30 lần, cách nhau 5 giây
                 response = self.session.get(api_url, params=params)
                 if response.status_code == 200:
                     data = response.json()
@@ -161,7 +161,7 @@ def handle_captcha(driver, email):
             EC.presence_of_element_located((By.ID, "cvfPhoneNumber")) or
             EC.presence_of_element_located((By.XPATH, "//div[contains(@class, 'a-box') and contains(., 'Enter the characters you see')]"))
         )
-        logger.warning(f"CẢNH BÁO: Phát hiện CAPTCHA hoặc SDT cho {email}. Xem như lỗi và bỏ qua tài khoản.")
+        logger.warning(f"CẢNH BÁO: Phát hiện CAPTCHA hoặc SDT cho {email}.")
         return False
     except Exception:
         # Không tìm thấy CAPTCHA
@@ -222,28 +222,22 @@ def log_failed_account(email, file_path):
     if not is_account_existed(email, file_path):
         with open(file_path, 'a', encoding='utf-8') as f:
             f.write(f"{email}\n")
-        logger.warning(f"CẢNH BÁO: Đã ghi tài khoản lỗi {email} vào {file_path}")
+        if "capcha.txt" not in file_path:
+            logger.warning(f"CẢNH BÁO: Đã ghi tài khoản lỗi {email} vào {file_path}")
     else:
         logger.info(f"THÔNG TIN: Tài khoản {email} đã có trong {file_path}, không ghi lại")
 
 def click_element(driver, element, timeout=10):
     try:
         time.sleep(2)
+        element.click()
+    except TimeoutException:
+        logger.error("Timeout chờ element có thể click")
+    except Exception as ex:
         # Scroll element vào giữa màn hình
         driver.execute_script("arguments[0].scrollIntoView({block: 'center'});", element)
         # Click bằng JS
         driver.execute_script("arguments[0].click();", element)
-    except TimeoutException:
-        logger.error("Timeout chờ element có thể click")
-    except WebDriverException as e:
-        logger.warning(f"Click bằng JS thất bại: {e}, thử dùng ActionChains...")
-        time.sleep(2)
-        try:
-            ActionChains(driver).move_to_element(element).click().perform()
-        except Exception as ex:
-            logger.error(f"Không thể chọn element bằng ActionChains: {ex}")
-    except Exception as ex:
-        logger.error(f"Lỗi không xác định khi click element: {ex}")
 
 def get_2fa_code(secret_key):
     try:
@@ -309,28 +303,32 @@ def register_amazon(email, orderid, username, sdt, address, proxy, password, sho
     backup_code = ""
     try:
         wait = WebDriverWait(driver, 10)
-        
         def handle_reg_link(start_link):
             max_retry = 5
             while max_retry > 0:
+                time.sleep(5)
                 try:
                     if not driver.session_id:
                         logger.error(f"Phiên làm việc gemLogin đã chết hoặc chưa được khởi tạo với {email}")
                         return False
                     driver.get(start_link)
-                    time.sleep(15)
+                    time.sleep(10)
+
                     if "www.amazon.com/amazonprime" in start_link:
                         form = wait.until(
                             EC.presence_of_element_located((By.CSS_SELECTOR, 'form[action="/gp/prime/pipeline/membersignup"]'))
                         )
                         form.submit()
-                    elif "sellercentral.amazon.com" in start_link:
-                        sign_up_button = wait.until(
-                            EC.element_to_be_clickable((By.ID, "rp_cta_h"))
-                        )
-                        sign_up_button.click()
-                        time.sleep(5)
-
+                    elif ("sellercentral.amazon.com" in start_link) and ("sellercentral.amazon.com/ap/signin" not in start_link):
+                        btn_sign_ins = driver.find_elements(By.TAG_NAME, "button")
+                        sign_up_btn = next((btn for btn in btn_sign_ins if btn.text.strip() == 'Sign up'), None)
+                        if sign_up_btn:
+                            # sign_up_btn.click()
+                            click_element(driver, sign_up_btn)
+                        else:
+                            logger.error(f"Không tìm thấy button Sign up")
+                            max_retry -= 1
+                            continue
                     # Chọn Tạo tài khoản
                     create_account_button = wait.until(EC.presence_of_element_located((By.ID, "register_accordion_header")))
                     click_element(driver, create_account_button)
@@ -391,16 +389,11 @@ def register_amazon(email, orderid, username, sdt, address, proxy, password, sho
         time.sleep(10)
         # Kích hoạt 2FA
         is_registered = True
-        try:
-            wait.until(EC.element_to_be_clickable((By.ID, "TWO_STEP_VERIFICATION_BUTTON"))).click()
+        turn_on_2fa = driver.find_element(By.ID, "TWO_STEP_VERIFICATION_BUTTON")
+        try: 
+            turn_on_2fa.click()
         except Exception as e:
-            try:
-                click_element(driver, driver.find_element(By.ID, "TWO_STEP_VERIFICATION_BUTTON"))
-            except Exception as ex:
-                logger.error(f"Không thể kích hoạt 2FA: {ex}")
-                log_failed_account(email, "captcha.txt")
-                return False
-
+            click_element(driver, turn_on_2fa)
         time.sleep(5)  # Wait for the page to load
         # get OTP again
         otp_2fa = shopgmail_api.get_otp(orderid)
@@ -408,8 +401,16 @@ def register_amazon(email, orderid, username, sdt, address, proxy, password, sho
             logger.error(f"CẢNH BÁO: Không lý OTP 2FA cho {email}")
             log_failed_account(email, "captcha.txt")
             return False
-        
-        otp_field_2fa = driver.find_element(By.ID, "input-box-otp")
+        def findElement(driver, selector, backup_selector=None):
+            try:
+                return driver.find_element(By.CSS_SELECTOR, selector)
+            except NoSuchElementException:
+                if backup_selector:
+                    return driver.find_element(By.CSS_SELECTOR, backup_selector)
+                return None
+            
+        otp_field_2fa = findElement(driver, "#input-box-otp", "form input")
+
         human_type(otp_field_2fa, otp_2fa)
         formConfirm =  wait.until(EC.presence_of_element_located((By.ID, "verification-code-form")))
         formConfirm.submit()
@@ -455,24 +456,44 @@ def register_amazon(email, orderid, username, sdt, address, proxy, password, sho
 
         
         # Điều hướng đến sổ địa chỉ
-        driver.get(getattr(config, "amazon_add_link","https://www.amazon.com/a/addresses/add?ref=ya_address_book_add_button"))
+        driver.get(getattr(config, "amazon_add_link","https://www.amazon.com/a/addresses"))
         time.sleep(10)
+        pickup_address = driver.find_element(By.ID, "ya-myab-store-address-add-link-mobile")
+        if not pickup_address:
+            driver.get("https://www.amazon.com/location_selector?useCustomerContext=1&clientId=amazon_us_add_to_addressbook_mobile&countryCode=US&ref=ab_accessPoint_search_mobile")
+        else:
+            click_element(driver, pickup_address)
         # Thêm địa chỉ
         try:
-            # address_field = driver.find_element(By.ID, "address-ui-widgets-enterAddressFullName")
-            # human_type(address_field, username)
-            
-            phone_field = wait.until(EC.presence_of_element_located((By.ID, "address-ui-widgets-enterAddressPhoneNumber")))
-            human_type(phone_field, sdt)
-            
-            address_lines = address.split(", ")
-            human_type(driver.find_element(By.ID, "address-ui-widgets-enterAddressLine1"), address_lines[0])
-            select_autocomplete(driver)
-            if len(address_lines) > 1:
-                driver.find_element(By.ID, "address-ui-widgets-enterAddressLine2").send_keys(address_lines[1])
-            # submit form address-ui-address-form
-            formConfirm =  wait.until(EC.presence_of_element_located((By.ID, "address-ui-address-form")))
-            formConfirm.submit()
+            # Tìm tất cả input có type="search"
+            inputs = driver.find_elements(By.CSS_SELECTOR, 'input[type="search"]')
+
+            # Lọc phần tử có placeholder đúng
+            target_input = next(
+                (i for i in inputs if "address, ZIP code" in (i.get_attribute("placeholder") or "")),
+                None
+            )
+            if target_input:
+                click_element(driver, target_input)
+                time.sleep(2)
+                human_type(target_input, address)
+                time.sleep(5)
+
+                address_links = driver.find_elements(By.CSS_SELECTOR, ".a-spacing-mini.a-link-normal")
+                if address_links:
+                    click_element(driver, address_links[0])
+                    time.sleep(3)
+
+                    try:
+                        btn_add = driver.find_element(By.CSS_SELECTOR, "[value='Add to address book']")
+                        click_element(driver, btn_add)
+                    except NoSuchElementException:
+                        print("Add to address book button not found.")
+                else:
+                    print("No address links found.")
+            else:
+                print("Target input not found.")
+            time.sleep(5)
             
             # Kiểm tra CAPTCHA lần nữa
             if not handle_captcha(driver, email):
@@ -481,7 +502,24 @@ def register_amazon(email, orderid, username, sdt, address, proxy, password, sho
             
             # # Lưu tài khoản thành công
             save_account(email, password, backup_code)
-            logger.info(f"THÔNG TIN: Đăng ký thành công {email}")
+            logger.info(f"THÔNG TIN: Đăng ký thành công {email}. Thực hiện click logo.")
+            logo = driver.find_element(By.ID, "nav-logo")
+            click_element(driver, logo)
+            time.sleep(5)
+            item_selects = driver.find_elements(By.CSS_SELECTOR, '#desktop-grid-2 .a-link-normal')
+            if len(item_selects) == 0:
+                item_selects = driver.find_elements(By.CSS_SELECTOR, '[role="listitem"]')
+            if len(item_selects) > 3:
+                click_element(driver, item_selects[3])
+            elif len(item_selects) > 2:
+                click_element(driver, item_selects[2])
+            elif len(item_selects) > 1:
+                click_element(driver, item_selects[1])
+            elif len(item_selects) > 0:
+                click_element(driver, item_selects[0])
+            else:
+                driver.get("https://www.amazon.com/b/?ie=UTF8&node=19277531011&ref_=af_gw_quadtopcard_f_july_xcat_cml_1&pd_rd_w=Z5OwE&content-id=amzn1.sym.28c8c8b7-487d-484e-96c7-4d7d067b06ed&pf_rd_p=28c8c8b7-487d-484e-96c7-4d7d067b06ed&pf_rd_r=J2YGJMS1OWWSAF1TRRA8&pd_rd_wg=RP51i&pd_rd_r=10053101-20a0-4a52-9465-faf1daa6535e")
+            time.sleep(5)
             return True
         except Exception as e:
             logger.error(f"CẢNH BÁO: Thêm địa chỉ thất bại cho {email}: {str(e)}")

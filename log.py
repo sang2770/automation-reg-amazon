@@ -2,16 +2,29 @@ import logging
 import colorlog
 
 
+class CustomColoredFormatter(colorlog.ColoredFormatter):
+    def format(self, record):
+        # Nếu là INFO thì xóa levelname
+        if record.levelno == logging.INFO:
+            record.levelname = ''
+        else:
+            record.levelname = record.levelname
+        return super().format(record)
+
+
 logger = None
-# Thiết lập logging
+
 def setup_logging():
     global logger
     logger = logging.getLogger("my_logger")
     logger.setLevel(logging.INFO)
 
-    # Định dạng log với màu sắc cho console
-    console_formatter = colorlog.ColoredFormatter(
-        "%(log_color)s%(asctime)s - %(levelname)s - %(message)s",
+    if logger.hasHandlers():
+        logger.handlers.clear()
+
+    # Sử dụng custom formatter
+    console_formatter = CustomColoredFormatter(
+        "%(log_color)s%(asctime)s - %(levelname)s%(message)s",
         log_colors={
             'DEBUG': 'cyan',
             'INFO': 'green',
@@ -22,20 +35,21 @@ def setup_logging():
         datefmt='%H:%M:%S'
     )
 
-    # Định dạng log cho file
     file_formatter = logging.Formatter(
-        '%(asctime)s - %(levelname)s - %(message)s',
+        '%(asctime)s - %(levelname)s%(message)s',
         datefmt='%H:%M:%S'
     )
 
-    # Console handler
     console_handler = logging.StreamHandler()
+    console_handler.setLevel(logging.INFO)
     console_handler.setFormatter(console_formatter)
-    logger.addHandler(console_handler)
 
     file_handler = logging.FileHandler('amazon_reg_tool.log', encoding='utf-8')
+    file_handler.setLevel(logging.INFO)
     file_handler.setFormatter(file_formatter)
+
+    logger.addHandler(console_handler)
     logger.addHandler(file_handler)
 
-# Gọi thiết lập logging
+# Setup logging
 setup_logging()

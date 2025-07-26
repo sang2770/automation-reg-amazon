@@ -14,7 +14,7 @@ from log import logger
 from webdriver_manager.chrome import ChromeDriverManager
 import json
 from selenium.webdriver.chrome.service import Service
-from selenium.common.exceptions import TimeoutException, WebDriverException
+from selenium.common.exceptions import TimeoutException, NoSuchElementException
 import traceback
 import threading
 
@@ -220,28 +220,23 @@ def log_failed_account(email, file_path):
     if not is_account_existed(email, file_path):
         with open(file_path, 'a', encoding='utf-8') as f:
             f.write(f"{email}\n")
-        logger.warning(f"CẢNH BÁO: Đã ghi tài khoản lỗi {email} vào {file_path}")
+        if "capcha.txt" not in file_path:
+            logger.warning(f"CẢNH BÁO: Đã ghi tài khoản lỗi {email} vào {file_path}")
     else:
         logger.info(f"THÔNG TIN: Tài khoản {email} đã có trong {file_path}, không ghi lại")
+
 
 def click_element(driver, element, timeout=10):
     try:
         time.sleep(2)
+        element.click()
+    except TimeoutException:
+        logger.error("Timeout chờ element có thể click")
+    except Exception as ex:
         # Scroll element vào giữa màn hình
         driver.execute_script("arguments[0].scrollIntoView({block: 'center'});", element)
         # Click bằng JS
         driver.execute_script("arguments[0].click();", element)
-    except TimeoutException:
-        logger.error("Timeout chờ element có thể click")
-    except WebDriverException as e:
-        logger.warning(f"Click bằng JS thất bại: {e}, thử dùng ActionChains...")
-        try:
-            from selenium.webdriver import ActionChains
-            ActionChains(driver).move_to_element(element).click().perform()
-        except Exception as ex:
-            logger.error(f"Không thể chọn element bằng ActionChains: {ex}")
-    except Exception as ex:
-        logger.error(f"Lỗi không xác định khi click element: {ex}")
 
 def get_2fa_code(secret_key):
     try:
@@ -324,12 +319,17 @@ def register_amazon(email, orderid, username, proxy, password, shopgmail_api):
                             EC.presence_of_element_located((By.CSS_SELECTOR, 'form[action="/gp/prime/pipeline/membersignup"]'))
                         )
                         form.submit()
-                    elif "sellercentral.amazon.com" in start_link:
-                        sign_up_button = wait.until(
-                            EC.element_to_be_clickable((By.ID, "rp_cta_h"))
-                        )
-                        sign_up_button.click()
-                        time.sleep(5)
+                    elif ("sellercentral.amazon.com" in start_link) and ("sellercentral.amazon.com/ap/signin" not in start_link):
+                        btn_sign_ins = driver.find_elements(By.TAG_NAME, "button")
+                        sign_up_btn = next((btn for btn in btn_sign_ins if btn.text.strip() == 'Sign up'), None)
+                        if sign_up_btn:
+                            # sign_up_btn.click()
+                            click_element(driver, sign_up_btn)
+                            logger.info(f"TxxxxHÔNG TIN: Tạo tài khoản cho {email}")
+                        else:
+                            logger.error(f"Không tìm thấy button Sign up")
+                            max_retry -= 1
+                            continue
 
                     # Chọn Tạo tài khoản
                     create_account_button = wait.until(EC.presence_of_element_located((By.ID, "register_accordion_header")))
@@ -400,7 +400,16 @@ def register_amazon(email, orderid, username, proxy, password, shopgmail_api):
             log_failed_account(email, "captcha.txt")
             return False
         
-        otp_field_2fa = driver.find_element(By.ID, "input-box-otp")
+        def findElement(driver, selector, backup_selector=None):
+            try:
+                return driver.find_element(By.CSS_SELECTOR, selector)
+            except NoSuchElementException:
+                if backup_selector:
+                    return driver.find_element(By.CSS_SELECTOR, backup_selector)
+                return None
+            
+        otp_field_2fa = findElement(driver, "#input-box-otp", "form input")
+
         human_type(otp_field_2fa, otp_2fa)
         formConfirm =  WebDriverWait(driver, 10).until(EC.presence_of_element_located((By.ID, "verification-code-form")))
         formConfirm.submit()
@@ -444,6 +453,23 @@ def register_amazon(email, orderid, username, proxy, password, shopgmail_api):
             return False
         save_account(email, password, backup_code)
         logger.info(f"THÔNG TIN: Đăng ký thành công {email}")
+        logo = driver.find_element(By.ID, "nav-logo")
+        click_element(driver, logo)
+        time.sleep(5)
+        item_selects = driver.find_elements(By.CSS_SELECTOR, '#desktop-grid-2 .a-link-normal')
+        if len(item_selects) == 0:
+                item_selects = driver.find_elements(By.CSS_SELECTOR, '[role="listitem"]')
+        if len(item_selects) > 3:
+            click_element(driver, item_selects[3])
+        elif len(item_selects) > 2:
+            click_element(driver, item_selects[2])
+        elif len(item_selects) > 1:
+            click_element(driver, item_selects[1])
+        elif len(item_selects) > 0:
+            click_element(driver, item_selects[0])
+        else:
+            driver.get("https://www.amazon.com/b/?ie=UTF8&node=19277531011&ref_=af_gw_quadtopcard_f_july_xcat_cml_1&pd_rd_w=Z5OwE&content-id=amzn1.sym.28c8c8b7-487d-484e-96c7-4d7d067b06ed&pf_rd_p=28c8c8b7-487d-484e-96c7-4d7d067b06ed&pf_rd_r=J2YGJMS1OWWSAF1TRRA8&pd_rd_wg=RP51i&pd_rd_r=10053101-20a0-4a52-9465-faf1daa6535e")
+        time.sleep(5)
         return True
     except Exception as e:
         logger.error(f"CẢNH BÁO: Lỗi khi xử lý {email}: {str(e)}\n{traceback.format_exc()}")
