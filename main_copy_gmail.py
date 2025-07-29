@@ -349,7 +349,11 @@ def register_amazon(email, orderid, username, sdt, address, proxy, password, sho
                     # password = "123456aA@Sang"
                     password_field = driver.find_element(By.ID, "ap_password")
                     human_type(password_field, password)
-                    click_element(driver, driver.find_element(By.ID, "continue"))
+                    try:
+                        register_form = driver.find_element(By.ID, "ap_register_form")
+                        register_form.submit()
+                    except:
+                        click_element(driver, driver.find_element(By.ID, "continue"))
                     
                     # Kiểm tra CAPTCHA
                     if not handle_captcha(driver, email):

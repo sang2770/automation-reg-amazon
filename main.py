@@ -343,7 +343,12 @@ def register_amazon(email, orderid, username, sdt, address, proxy, password, sho
                     # password = "123456aA@Sang"
                     password_field = driver.find_element(By.ID, "ap_password")
                     human_type(password_field, password)
-                    click_element(driver, driver.find_element(By.ID, "continue"))
+
+                    try:
+                        register_form = driver.find_element(By.ID, "ap_register_form")
+                        register_form.submit()
+                    except:
+                        click_element(driver, driver.find_element(By.ID, "continue"))
                     
                     # Kiểm tra CAPTCHA
                     if not handle_captcha(driver, email):
@@ -519,7 +524,7 @@ def register_amazon(email, orderid, username, sdt, address, proxy, password, sho
                 click_element(driver, item_selects[0])
             else:
                 driver.get("https://www.amazon.com/b/?ie=UTF8&node=19277531011&ref_=af_gw_quadtopcard_f_july_xcat_cml_1&pd_rd_w=Z5OwE&content-id=amzn1.sym.28c8c8b7-487d-484e-96c7-4d7d067b06ed&pf_rd_p=28c8c8b7-487d-484e-96c7-4d7d067b06ed&pf_rd_r=J2YGJMS1OWWSAF1TRRA8&pd_rd_wg=RP51i&pd_rd_r=10053101-20a0-4a52-9465-faf1daa6535e")
-            time.sleep(5)
+            time.sleep(15)
             return True
         except Exception as e:
             logger.error(f"CẢNH BÁO: Thêm địa chỉ thất bại cho {email}: {str(e)}")

@@ -330,7 +330,7 @@ def register_amazon(email, orderid, username, sdt, address, proxy, password, sho
                         if sign_up_btn:
                             # sign_up_btn.click()
                             click_element(driver, sign_up_btn)
-                            logger.info(f"TxxxxHÔNG TIN: Tạo tài khoản cho {email}")
+                            logger.info(f"THÔNG TIN: Tạo tài khoản cho {email}")
                         else:
                             logger.error(f"Không tìm thấy button Sign up")
                             max_retry -= 1
@@ -351,7 +351,11 @@ def register_amazon(email, orderid, username, sdt, address, proxy, password, sho
                     # password = "123456aA@Sang"
                     password_field = driver.find_element(By.ID, "ap_password")
                     human_type(password_field, password)
-                    click_element(driver, driver.find_element(By.ID, "continue"))
+                    try:
+                        register_form = driver.find_element(By.ID, "ap_register_form")
+                        register_form.submit()
+                    except:
+                        click_element(driver, driver.find_element(By.ID, "continue"))
                     
                     # Kiểm tra CAPTCHA
                     if not handle_captcha(driver, email):
