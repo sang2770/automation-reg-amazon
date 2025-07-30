@@ -59,7 +59,7 @@ class GemLoginAPI:
             "time_zone": "America/New_York",
             "country": "United States",
         }
-        response = self.session.post(f"{self.base_url}/api/profiles/create", json=payload, verify=False)
+        response = self.session.post(f"{self.base_url}/api/profiles/create", json=payload)
         if response.status_code == 200 and response.json().get("success"):
             return response.json().get("data", {}).get("id")
         logger.error(f"CẢNH BÁO: Không tạo được cấu hình với proxy {proxy}")
@@ -67,7 +67,7 @@ class GemLoginAPI:
 
     def start_profile(self, profile_id):
         # Khởi động trình duyệt cho cấu hình
-        response = self.session.get(f"{self.base_url}/api/profiles/start/{profile_id}", verify=False)
+        response = self.session.get(f"{self.base_url}/api/profiles/start/{profile_id}")
         if response.status_code == 200 and response.json().get("success"):
             return response.json().get("data", {})
         logger.error(f"CẢNH BÁO: Không khởi động được cấu hình {profile_id}")
@@ -101,7 +101,7 @@ class ShopGmailAPI:
             "service": "amazon"
         }
         try:
-            response = self.session.get(api_url, params=params, verify=False)
+            response = self.session.get(api_url, params=params)
             if response.status_code == 200:
                 data = response.json()
                 if data.get("status") == "success":
@@ -133,7 +133,7 @@ class ShopGmailAPI:
         }
         try:
             for _ in range(15):  # Thử tối đa 30 lần, cách nhau 5 giây
-                response = self.session.get(api_url, params=params, verify=False)
+                response = self.session.get(api_url, params=params)
                 if response.status_code == 200:
                     data = response.json()
                     if data.get("status") == "success" and data.get("data", {}).get("status") == "success":
