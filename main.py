@@ -273,7 +273,11 @@ def check_login(driver, email, password):
         # Nhập email
         email_input = wait.until(EC.visibility_of_element_located((By.ID, "ap_email_login")))
         human_type(email_input, email)
-        click_element(driver, driver.find_element(By.ID, "continue-announce"))
+        try:
+            form_login = driver.find_element(By.CSS_SELECTOR, "form[name='signIn']")
+            form_login.submit() 
+        except:
+            click_element(driver, driver.find_element(By.ID, "continue-announce"))
 
         time.sleep(3)
         if "ap/cvf" in driver.current_url or driver.find_elements(By.ID, "captchacharacters"):
@@ -283,7 +287,11 @@ def check_login(driver, email, password):
         # Nhập mật khẩu
         pwd_input = wait.until(EC.visibility_of_element_located((By.ID, "ap_password")))
         human_type(pwd_input, password)
-        click_element(driver, driver.find_element(By.ID, "signInSubmit"))
+        try:
+            form_login = driver.find_element(By.CSS_SELECTOR, "form[name='signIn']")
+            form_login.submit()
+        except: 
+            click_element(driver, driver.find_element(By.ID, "signInSubmit"))
 
         time.sleep(5)
         if "ap/cvf" in driver.current_url or driver.find_elements(By.ID, "captchacharacters"):
@@ -440,9 +448,15 @@ def register_amazon(email, orderid, username, sdt, address, proxy, password, sho
                 logger.error(f"Đăng nhập thất bại cho tài khoản {email}: {error_reason}")
                 log_failed_account(email, "captcha.txt")
                 return False
-            driver.get(getattr(config, "2fa_amazon_link", "https://www.amazon.com/ax/account/manage?openid.return_to=https%3A%2F%2Fwww.amazon.com%2Fyour-account%3Fref_%3Dya_cnep&openid.assoc_handle=anywhere_v2_us&shouldShowPasskeyLink=true&passkeyEligibilityArb=23254432-b9cb-4b93-98b6-ba9ed5e45a65&passkeyMetricsActionId=07975eeb-087d-42ab-971d-66c2807fe4f5"))
             time.sleep(10)
-        
+            # ap-account-fixup-phone-skip-link
+            try:
+                skip = driver.find_element(By.ID, "ap-account-fixup-phone-skip-link")       
+                click_element(driver, skip)
+            except:
+                if "www.amazon.com/ax/account/manage" not in driver.current_url:
+                    driver.get("https://www.amazon.com/ax/account/manage?openid.return_to=https%3A%2F%2Fwww.amazon.com%2Fyour-account%3Fref_%3Dya_cnep&openid.assoc_handle=anywhere_v2_us&shouldShowPasskeyLink=true&passkeyEligibilityArb=23254432-b9cb-4b93-98b6-ba9ed5e45a65&passkeyMetricsActionId=07975eeb-087d-42ab-971d-66c2807fe4f5")
+            time.sleep(10)
         # Kích hoạt 2FA
         is_registered = True
         turn_on_2fa = driver.find_element(By.ID, "TWO_STEP_VERIFICATION_BUTTON")
