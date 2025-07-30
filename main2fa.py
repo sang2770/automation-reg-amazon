@@ -220,11 +220,10 @@ def log_failed_account(email, file_path):
     if not is_account_existed(email, file_path):
         with open(file_path, 'a', encoding='utf-8') as f:
             f.write(f"{email}\n")
-        if "capcha.txt" not in file_path:
+        if "captcha.txt" not in file_path:
             logger.warning(f"CẢNH BÁO: Đã ghi tài khoản lỗi {email} vào {file_path}")
-    else:
+    elif "captcha.txt" not in file_path:
         logger.info(f"THÔNG TIN: Tài khoản {email} đã có trong {file_path}, không ghi lại")
-
 
 def click_element(driver, element, timeout=10):
     try:
@@ -265,9 +264,35 @@ def select_autocomplete(driver):
     except Exception:
         # Nếu không có autocomplete, tiếp tục
         logger.info("THÔNG TIN: Không tìm thấy autocomplete, tiếp tục nhập địa chỉ")
+def check_login(driver, email, password):
+    try:
+        wait = WebDriverWait(driver, 15)
+        # Nhập email
+        email_input = wait.until(EC.visibility_of_element_located((By.ID, "ap_email_login")))
+        human_type(email_input, email)
+        click_element(driver, driver.find_element(By.ID, "continue-announce"))
 
+        time.sleep(3)
+        if "ap/cvf" in driver.current_url or driver.find_elements(By.ID, "captchacharacters"):
+            logger.error(f"🚫 CAPTCHA sau email: {email}")
+            return False, "CAPTCHA"
+
+        # Nhập mật khẩu
+        pwd_input = wait.until(EC.visibility_of_element_located((By.ID, "ap_password")))
+        human_type(pwd_input, password)
+        click_element(driver, driver.find_element(By.ID, "signInSubmit"))
+
+        time.sleep(5)
+        if "ap/cvf" in driver.current_url or driver.find_elements(By.ID, "captchacharacters"):
+            logger.error(f"🚫 CAPTCHA sau mật khẩu: {email}")
+            return False, "CAPTCHA"
+        return True, None
+    except Exception as e:
+        logger.error(f"❗ Lỗi khi đăng nhập tài khoản {email}: {repr(e)}")
+        traceback_str = traceback.format_exc()
+        logger.debug(f"Chi tiết lỗi:\n{traceback_str}")
+        return False, repr(e)
 # Hàm đăng ký Amazon chính
-
 def register_amazon(email, orderid, username, proxy, password, shopgmail_api):
     gemlogin = GemLoginAPI()
 
@@ -330,15 +355,27 @@ def register_amazon(email, orderid, username, proxy, password, shopgmail_api):
                             logger.error(f"Không tìm thấy button Sign up")
                             max_retry -= 1
                             continue
+                    elif "sellercentral.amazon.ca" in start_link:
+                        btn_sign_ins = driver.find_elements(By.TAG_NAME, "a")
+                        sign_up_btn = next((btn for btn in btn_sign_ins if btn.text.strip() == 'Sign up'), None)
+                        if sign_up_btn:
+                            click_element(driver, sign_up_btn)
+                        else:
+                            logger.error(f"Không tìm thấy button Sign up")
+                            max_retry -= 1
 
                     # Chọn Tạo tài khoản
                     create_account_button = wait.until(EC.presence_of_element_located((By.ID, "register_accordion_header")))
                     click_element(driver, create_account_button)
                     # Điền biểu mẫu đăng ký
                     name_field = wait.until(EC.presence_of_element_located((By.ID, "ap_customer_name")))
+                    click_element(driver, name_field)
+                    time.sleep(3)
                     human_type(name_field, username)
                     
                     email_field = driver.find_element(By.ID, "ap_email")
+                    click_element(driver, email_field)
+                    time.sleep(3)
                     human_type(email_field, email)
                     
                     # password = ''.join(random.choices(string.ascii_letters + string.digits, k=12))
@@ -392,6 +429,14 @@ def register_amazon(email, orderid, username, proxy, password, shopgmail_api):
         # Điều hướng đến thiết lập 2FA
         driver.get(getattr(config, "2fa_amazon_link", "https://www.amazon.com/ax/account/manage?openid.return_to=https%3A%2F%2Fwww.amazon.com%2Fyour-account%3Fref_%3Dya_cnep&openid.assoc_handle=anywhere_v2_us&shouldShowPasskeyLink=true&passkeyEligibilityArb=23254432-b9cb-4b93-98b6-ba9ed5e45a65&passkeyMetricsActionId=07975eeb-087d-42ab-971d-66c2807fe4f5"))
         time.sleep(10)
+        if "www.amazon.com/ax/account/manage" not in driver.current_url and "amazon.com/ap/signin" in driver.current_url:
+            login_success, error_reason = check_login(driver, email, password)
+            if not login_success:
+                logger.error(f"Đăng nhập thất bại cho tài khoản {email}: {error_reason}")
+                log_failed_account(email, "captcha.txt")
+                return False
+            driver.get(getattr(config, "2fa_amazon_link", "https://www.amazon.com/ax/account/manage?openid.return_to=https%3A%2F%2Fwww.amazon.com%2Fyour-account%3Fref_%3Dya_cnep&openid.assoc_handle=anywhere_v2_us&shouldShowPasskeyLink=true&passkeyEligibilityArb=23254432-b9cb-4b93-98b6-ba9ed5e45a65&passkeyMetricsActionId=07975eeb-087d-42ab-971d-66c2807fe4f5"))
+            time.sleep(10)
         is_registered = True
         # Kích hoạt 2FA
         WebDriverWait(driver, 10).until(EC.element_to_be_clickable((By.ID, "TWO_STEP_VERIFICATION_BUTTON"))).click()
@@ -457,8 +502,11 @@ def register_amazon(email, orderid, username, proxy, password, shopgmail_api):
             return False
         save_account(email, password, backup_code)
         logger.info(f"THÔNG TIN: Đăng ký thành công {email}")
-        logo = driver.find_element(By.ID, "nav-logo")
-        click_element(driver, logo)
+        try:
+                logo = driver.find_element(By.ID, "nav-logo")
+                click_element(driver, logo)
+        except:
+                driver.get("https://www.amazon.com/ref=navm_hdr_logo")
         time.sleep(5)
         item_selects = driver.find_elements(By.CSS_SELECTOR, '#desktop-grid-2 .a-link-normal')
         if len(item_selects) == 0:

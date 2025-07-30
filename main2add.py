@@ -222,8 +222,9 @@ def log_failed_account(email, file_path):
     if not is_account_existed(email, file_path):
         with open(file_path, 'a', encoding='utf-8') as f:
             f.write(f"{email}\n")
-        logger.warning(f"CẢNH BÁO: Đã ghi tài khoản lỗi {email} vào {file_path}")
-    else:
+        if "captcha.txt" not in file_path:
+            logger.warning(f"CẢNH BÁO: Đã ghi tài khoản lỗi {email} vào {file_path}")
+    elif "captcha.txt" not in file_path:
         logger.info(f"THÔNG TIN: Tài khoản {email} đã có trong {file_path}, không ghi lại")
 
 def click_element(driver, element, timeout=10):
@@ -272,7 +273,34 @@ def select_autocomplete(driver):
     except Exception:
         # Nếu không có autocomplete, tiếp tục
         logger.info("THÔNG TIN: Không tìm thấy autocomplete, tiếp tục nhập địa chỉ")
+def check_login(driver, email, password):
+    try:
+        wait = WebDriverWait(driver, 15)
+        # Nhập email
+        email_input = wait.until(EC.visibility_of_element_located((By.ID, "ap_email_login")))
+        human_type(email_input, email)
+        click_element(driver, driver.find_element(By.ID, "continue-announce"))
 
+        time.sleep(3)
+        if "ap/cvf" in driver.current_url or driver.find_elements(By.ID, "captchacharacters"):
+            logger.error(f"🚫 CAPTCHA sau email: {email}")
+            return False, "CAPTCHA"
+
+        # Nhập mật khẩu
+        pwd_input = wait.until(EC.visibility_of_element_located((By.ID, "ap_password")))
+        human_type(pwd_input, password)
+        click_element(driver, driver.find_element(By.ID, "signInSubmit"))
+
+        time.sleep(5)
+        if "ap/cvf" in driver.current_url or driver.find_elements(By.ID, "captchacharacters"):
+            logger.error(f"🚫 CAPTCHA sau mật khẩu: {email}")
+            return False, "CAPTCHA"
+        return True, None
+    except Exception as e:
+        logger.error(f"❗ Lỗi khi đăng nhập tài khoản {email}: {repr(e)}")
+        traceback_str = traceback.format_exc()
+        logger.debug(f"Chi tiết lỗi:\n{traceback_str}")
+        return False, repr(e)
 # Hàm đăng ký Amazon chính
 def register_amazon(email, orderid, username, sdt, address, proxy, password, shopgmail_api):
     gemlogin = GemLoginAPI()
@@ -335,8 +363,15 @@ def register_amazon(email, orderid, username, sdt, address, proxy, password, sho
                             logger.error(f"Không tìm thấy button Sign up")
                             max_retry -= 1
                             continue
+                    elif "sellercentral.amazon.ca" in start_link:
+                        btn_sign_ins = driver.find_elements(By.TAG_NAME, "a")
+                        sign_up_btn = next((btn for btn in btn_sign_ins if btn.text.strip() == 'Sign up'), None)
+                        if sign_up_btn:
+                            click_element(driver, sign_up_btn)
+                        else:
+                            logger.error(f"Không tìm thấy button Sign up")
+                            max_retry -= 1
                     logger.info(f"THÔNG TIN: Tạo tài khoản cho {email}")
-
                     # Chọn Tạo tài khoản
                     create_account_button = wait.until(EC.presence_of_element_located((By.ID, "register_accordion_header")))
                     click_element(driver, create_account_button)

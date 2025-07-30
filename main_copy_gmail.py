@@ -222,10 +222,10 @@ def log_failed_account(email, file_path):
     if not is_account_existed(email, file_path):
         with open(file_path, 'a', encoding='utf-8') as f:
             f.write(f"{email}\n")
-        logger.warning(f"CẢNH BÁO: Đã ghi tài khoản lỗi {email} vào {file_path}")
-    else:
+        if "captcha.txt" not in file_path:
+            logger.warning(f"CẢNH BÁO: Đã ghi tài khoản lỗi {email} vào {file_path}")
+    elif "captcha.txt" not in file_path:
         logger.info(f"THÔNG TIN: Tài khoản {email} đã có trong {file_path}, không ghi lại")
-
 def click_element(driver, element, timeout=10):
     try:
         time.sleep(2)
