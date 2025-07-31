@@ -303,6 +303,17 @@ def check_login(driver, email, password):
         traceback_str = traceback.format_exc()
         logger.debug(f"Chi tiết lỗi:\n{traceback_str}")
         return False, repr(e)
+    
+def click_first_valid_element(driver, selectors):
+    for by, selector in selectors:
+        try:
+            el = driver.find_element(by, selector)
+            click_element(driver, el)
+            return True
+        except:
+            continue
+    return False
+
 # Hàm đăng ký Amazon chính
 def register_amazon(email, orderid, username, sdt, address, proxy, password, shopgmail_api):
     gemlogin = GemLoginAPI()
@@ -432,9 +443,23 @@ def register_amazon(email, orderid, username, sdt, address, proxy, password, sho
         
         otp_field = wait.until(EC.presence_of_element_located((By.ID, "cvf-input-code")))
         human_type(otp_field, otp)
-        verify_button = wait.until(EC.presence_of_element_located((By.CSS_SELECTOR, "input[aria-label='Verify OTP Button']")))
-        click_element(driver, verify_button)
-        
+        verify_selector = [
+            (By.CSS_SELECTOR, "input[aria-label='Verify OTP Button']"),
+            (By.CSS_SELECTOR, "input[aria-label='Verify OTP']"),
+            (By.CSS_SELECTOR, "input[aria-label='Create your Amazon account']"),
+            (By.CSS_SELECTOR, "#cvf-submit-otp-button-announce")
+        ]
+
+        otp_verify =click_first_valid_element(driver, verify_selector)
+        if not otp_verify:
+            try:
+                verify_form = driver.find_element(By.ID, "verification-code-form")
+                verify_form.submit()
+            except:
+                logger.error(f"CẢNH BÁO: Không lý OTP cho {email}")
+                log_failed_account(email, "captcha.txt")
+                return False
+        time.sleep(10)
         # Kiểm tra CAPTCHA lần nữa
         if not handle_captcha(driver, email):
             log_failed_account(email, "captcha.txt")
