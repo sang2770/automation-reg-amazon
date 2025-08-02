@@ -432,13 +432,18 @@ def register_amazon(email, orderid, username, sdt, address, proxy, password, sho
         
         otp_field = wait.until(EC.presence_of_element_located((By.ID, "cvf-input-code")))
         human_type(otp_field, otp)
-        verify_button = wait.until(EC.presence_of_element_located((By.CSS_SELECTOR, "input[aria-label='Verify OTP Button']")))
-        click_element(driver, verify_button)
-        
+        try:
+            verify_button = WebDriverWait(driver, 10).until(EC.presence_of_element_located((By.CSS_SELECTOR, "input[aria-label='Verify OTP Button']")))
+            click_element(driver, verify_button)
+        except:
+            verify_form = driver.find_element(By.ID, "verification-code-form") 
+            verify_form.submit()
+        time.sleep(10)
         # Kiểm tra CAPTCHA lần nữa
         if not handle_captcha(driver, email):
             log_failed_account(email, "captcha.txt")
             return False
+        
         # Điều hướng đến thiết lập 2FA
         driver.get(getattr(config, "2fa_amazon_link", "https://www.amazon.com/ax/account/manage?openid.return_to=https%3A%2F%2Fwww.amazon.com%2Fyour-account%3Fref_%3Dya_cnep&openid.assoc_handle=anywhere_v2_us&shouldShowPasskeyLink=true&passkeyEligibilityArb=23254432-b9cb-4b93-98b6-ba9ed5e45a65&passkeyMetricsActionId=07975eeb-087d-42ab-971d-66c2807fe4f5"))
         time.sleep(10)

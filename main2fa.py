@@ -406,6 +406,7 @@ def register_amazon(email, orderid, username, proxy, password, shopgmail_api):
             if handle_reg_link(start_link):
                 check = True
                 break
+            time.sleep(random.uniform(1, 3))
         if not check:
             logger.error(f"CẢNH BÁO: Không tạo được tài khoản cho {email}")
             log_failed_account(email, "captcha.txt")
@@ -417,10 +418,16 @@ def register_amazon(email, orderid, username, proxy, password, shopgmail_api):
             log_failed_account(email, "captcha.txt")
             return False
         
-        otp_field = WebDriverWait(driver, 10).until(EC.presence_of_element_located((By.ID, "cvf-input-code")))
+        otp_field = wait.until(EC.presence_of_element_located((By.ID, "cvf-input-code")))
         human_type(otp_field, otp)
-        click_element(driver, driver.find_element(By.CSS_SELECTOR, "input[aria-label='Verify OTP Button']"))
-        
+        try:
+            verify_button = WebDriverWait(driver, 10).until(EC.presence_of_element_located((By.CSS_SELECTOR, "input[aria-label='Verify OTP Button']")))
+            click_element(driver, verify_button)
+        except:
+            verify_form = driver.find_element(By.ID, "verification-code-form") 
+            verify_form.submit()
+        time.sleep(10)
+
         # Kiểm tra CAPTCHA lần nữa
         if not handle_captcha(driver, email):
             log_failed_account(email, "captcha.txt")
