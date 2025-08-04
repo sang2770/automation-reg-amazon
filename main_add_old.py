@@ -156,18 +156,19 @@ class ShopGmailAPI:
 
 # Hàm kiểm tra CAPTCHA
 def handle_captcha(driver, email):
-    captcha_selectors = [
-        (By.ID, "captcha-container"),
-        (By.ID, "captchacharacters"),
-        (By.ID, "cvf-aamation-challenge-iframe"),
-    ]
     try:
+        # Kiểm tra sự hiện diện của CAPTCHA bằng các yếu tố cụ thể
         WebDriverWait(driver, 5).until(
-            lambda d: any(d.find_elements(*sel) for sel in captcha_selectors)
+            EC.presence_of_element_located((By.ID, "captcha-container")) or
+            EC.presence_of_element_located((By.ID, "captchacharacters")) or
+            EC.presence_of_element_located((By.ID, "cvf-aamation-challenge-iframe")) or
+            EC.presence_of_element_located((By.ID, "cvfPhoneNumber")) or
+            EC.presence_of_element_located((By.XPATH, "//div[contains(@class, 'a-box') and contains(., 'Enter the characters you see')]"))
         )
         logger.warning(f"CẢNH BÁO: Phát hiện CAPTCHA hoặc SDT cho {email}.")
         return False
-    except:
+    except Exception:
+        # Không tìm thấy CAPTCHA
         return True
 
 # Hàm mô phỏng gõ giống con người
@@ -533,36 +534,24 @@ def register_amazon(email, orderid, username, sdt, address, proxy, password, sho
         # Điều hướng đến sổ địa chỉ
         driver.get(getattr(config, "amazon_add_link","https://www.amazon.com/a/addresses"))
         time.sleep(10)
-        try:
-            pickup_address = driver.find_element(By.ID, "ya-myab-store-address-add-link-mobile")
-            click_element(driver, pickup_address)
-        except:
-            driver.get("https://www.amazon.com/location_selector?useCustomerContext=1&clientId=amazon_us_add_to_addressbook_mobile&countryCode=US&ref=ab_accessPoint_search_mobile")
+        driver.get(getattr(config, "amazon_add_link","https://www.amazon.com/a/addresses/add?ref=ya_address_book_add_button"))
+        time.sleep(10)
         # Thêm địa chỉ
         try:
-            # Tìm tất cả input có type="search"
-            target_input = driver.find_element(By.CSS_SELECTOR, 'input[type="search"]')
-            logger.info(f" Đã tìm thấy input địa chỉ")
-            if target_input:
-                click_element(driver, target_input)
-                time.sleep(2)
-                human_type(target_input, address)
-                time.sleep(10)
-
-                address_links = driver.find_elements(By.CSS_SELECTOR, ".a-spacing-mini.a-link-normal")
-                if address_links:
-                    click_element(driver, address_links[0])
-                    time.sleep(3)
-                    try:
-                        btn_add = driver.find_element(By.CSS_SELECTOR, "[value='Add to address book']")
-                        click_element(driver, btn_add)
-                    except:
-                        print("Add to address book button not found.")
-                else:
-                    print("No address links found.")
-            else:
-                print("Target input not found.")
-            time.sleep(10)
+            address_field = driver.find_element(By.ID, "address-ui-widgets-enterAddressFullName")
+            human_type(address_field, username)
+            
+            phone_field = driver.find_element(By.ID, "address-ui-widgets-enterAddressPhoneNumber")
+            human_type(phone_field, sdt)
+            
+            address_lines = address.split(", ")
+            human_type(driver.find_element(By.ID, "address-ui-widgets-enterAddressLine1"), address_lines[0])
+            select_autocomplete(driver)
+            if len(address_lines) > 1:
+                driver.find_element(By.ID, "address-ui-widgets-enterAddressLine2").send_keys(address_lines[1])
+            # submit form address-ui-address-form
+            formConfirm =  WebDriverWait(driver, 10).until(EC.presence_of_element_located((By.ID, "address-ui-address-form")))
+            formConfirm.submit()
             
             # Kiểm tra CAPTCHA lần nữa
             if not handle_captcha(driver, email):
