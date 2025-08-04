@@ -160,6 +160,7 @@ def handle_captcha(driver, email):
         WebDriverWait(driver, 5).until(
             EC.presence_of_element_located((By.ID, "captcha-container")) or
             EC.presence_of_element_located((By.ID, "captchacharacters")) or
+            EC.presence_of_element_located((By.ID, "cvf-aamation-challenge-iframe")) or
             EC.presence_of_element_located((By.ID, "cvfPhoneNumber")) or
             EC.presence_of_element_located((By.XPATH, "//div[contains(@class, 'a-box') and contains(., 'Enter the characters you see')]"))
         )
@@ -282,7 +283,7 @@ def check_login(driver, email, password):
             click_element(driver, driver.find_element(By.ID, "continue-announce"))
 
         time.sleep(3)
-        if "ap/cvf" in driver.current_url or driver.find_elements(By.ID, "captchacharacters"):
+        if "ap/cvf" in driver.current_url or handle_captcha(driver, email):
             logger.error(f"🚫 CAPTCHA sau email: {email}")
             return False, "CAPTCHA"
 
@@ -296,7 +297,7 @@ def check_login(driver, email, password):
             click_element(driver, driver.find_element(By.ID, "signInSubmit"))
 
         time.sleep(5)
-        if "ap/cvf" in driver.current_url or driver.find_elements(By.ID, "captchacharacters"):
+        if "ap/cvf" in driver.current_url or handle_captcha(driver, email):
             logger.error(f"🚫 CAPTCHA sau mật khẩu: {email}")
             return False, "CAPTCHA"
         return True, None
@@ -544,13 +545,7 @@ def register_amazon(email, orderid, username, sdt, address, proxy, password, sho
         # Thêm địa chỉ
         try:
             # Tìm tất cả input có type="search"
-            inputs = driver.find_elements(By.CSS_SELECTOR, 'input[type="search"]')
-
-            # Lọc phần tử có placeholder đúng
-            target_input = next(
-                (i for i in inputs if "address, ZIP code" in (i.get_attribute("placeholder") or "")),
-                None
-            )
+            target_input = driver.find_element(By.CSS_SELECTOR, 'input[type="search"]')
             if target_input:
                 click_element(driver, target_input)
                 time.sleep(2)
