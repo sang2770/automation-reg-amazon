@@ -155,18 +155,18 @@ class ShopGmailAPI:
 
 # Hàm kiểm tra CAPTCHA
 def handle_captcha(driver, email):
+    captcha_selectors = [
+        (By.ID, "captcha-container"),
+        (By.ID, "captchacharacters"),
+        (By.ID, "cvf-aamation-challenge-iframe"),
+    ]
     try:
-        # Kiểm tra sự hiện diện của CAPTCHA bằng các yếu tố cụ thể
         WebDriverWait(driver, 5).until(
-            EC.presence_of_element_located((By.ID, "captcha-container")) or
-            EC.presence_of_element_located((By.ID, "captchacharacters")) or
-            EC.presence_of_element_located((By.ID, "cvfPhoneNumber")) or
-            EC.presence_of_element_located((By.XPATH, "//div[contains(@class, 'a-box') and contains(., 'Enter the characters you see')]"))
+            lambda d: any(d.find_elements(*sel) for sel in captcha_selectors)
         )
-        logger.warning(f"CẢNH BÁO: Phát hiện CAPTCHA hoặc SDT cho {email}. Xem như lỗi và bỏ qua tài khoản.")
+        logger.warning(f"CẢNH BÁO: Phát hiện CAPTCHA hoặc SDT cho {email}.")
         return False
-    except Exception:
-        # Không tìm thấy CAPTCHA
+    except:
         return True
 
 # Hàm mô phỏng gõ giống con người
