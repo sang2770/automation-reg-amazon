@@ -17,6 +17,7 @@ from selenium.webdriver.chrome.service import Service
 from selenium.common.exceptions import TimeoutException, NoSuchElementException
 import traceback
 import threading
+import pyotp
 from queue import Queue, Empty
 
 service = Service(ChromeDriverManager(driver_version="134.0.6998.166").install())
@@ -241,17 +242,12 @@ def click_element(driver, element, timeout=10):
 
 def get_2fa_code(secret_key):
     try:
-        url = f"https://2fa.live/tok/{secret_key.replace(' ', '')}"
-        response = requests.get(url)
-        if response.status_code == 200:
-            data = response.json()
-            logger.info(f"{secret_key} - {data.get('token')}")
-            return data.get('token')
-        else:
-            logger.error(f"Không lấy được mã 2FA cho khóa: {secret_key}")
-            return None
+        totp = pyotp.TOTP(secret_key.replace(' ', ''))
+        token = totp.now()
+        logger.info(f"{secret_key} - {token}")
+        return token
     except Exception as e:
-        logger.error(f"Lỗi khi lấy mã 2FA: {repr(e)}")
+        logger.error(f"Lỗi khi tạo mã 2FA: {repr(e)}")
         return None
 
 def select_autocomplete(driver):

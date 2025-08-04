@@ -3,6 +3,16 @@ import colorlog
 
 
 logger = None
+
+class CustomFormatter(colorlog.ColoredFormatter):
+    def format(self, record):
+        # Nếu là MainThread thì để trống threadName
+        if record.threadName == "MainThread" or record.threadName == "Dừng":
+            record.threadName = ""
+        else:
+            record.threadName = " - [Tab-" + record.threadName + "]"
+        return super().format(record)
+
 # Thiết lập logging
 def setup_logging():
     global logger
@@ -10,8 +20,9 @@ def setup_logging():
     logger.setLevel(logging.INFO)
 
     # Định dạng log với màu sắc cho console
-    console_formatter = colorlog.ColoredFormatter(
-        "%(log_color)s%(asctime)s - %(message)s",
+
+    console_formatter = CustomFormatter(
+        "%(log_color)s%(asctime)s%(threadName)s - %(message)s",
         log_colors={
             'DEBUG': 'cyan',
             'INFO': 'green',
@@ -31,6 +42,7 @@ def setup_logging():
     # Console handler
     console_handler = logging.StreamHandler()
     console_handler.setFormatter(console_formatter)
+    console_handler.terminator = "\n"  # đảm bảo chỉ 1 dòng xuống
     logger.addHandler(console_handler)
 
     file_handler = logging.FileHandler('amazon_reg_tool.log', encoding='utf-8')
