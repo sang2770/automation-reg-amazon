@@ -17,8 +17,10 @@ from selenium.webdriver.chrome.service import Service
 from selenium.common.exceptions import TimeoutException, NoSuchElementException
 import traceback
 import threading
+from queue import Queue, Empty
 
 service = Service(ChromeDriverManager(driver_version="134.0.6998.166").install())
+stop_event = threading.Event()
 
 # Hàm đọc config.json
 def read_config(file_path):
@@ -107,7 +109,7 @@ class ShopGmailAPI:
                     email = data.get("data", {}).get("email")
                     orderid = data.get("data", {}).get("orderid")
                     if email and orderid:
-                        logger.info(f"THÔNG TIN: Tạo Gmail thành công: {email} (Order ID: {orderid})")
+                        logger.info(f"Tạo Gmail thành công: {email}")
                         return email, orderid
                     else:
                         logger.warning("CẢNH BÁO: Không tìm thấy email hoặc orderid trong phản hồi API")
@@ -138,7 +140,7 @@ class ShopGmailAPI:
                     if data.get("status") == "success" and data.get("data", {}).get("status") == "success":
                         otp = data.get("data", {}).get("otp")
                         if otp:
-                            logger.info(f"THÔNG TIN: Lấy OTP thành công: {otp}")
+                            logger.info(f"Lấy OTP thành công: {otp}")
                             return otp
                         elif data.get("data", {}).get("status") in ["error-token", "timeout"]:
                             logger.warning(f"CẢNH BÁO: Lỗi OTP: {data.get('data', {}).get('status')}")
@@ -200,7 +202,7 @@ def save_account(email, password, tfa_code, file_path="output.txt"):
     if not is_account_existed(email, file_path):
         with open(file_path, 'a', encoding='utf-8') as f:
             f.write(f"{email}|{password}|{tfa_code}\n")
-        logger.info(f"THÔNG TIN: Đã lưu tài khoản {email} vào {file_path}")
+        logger.info(f"Đã lưu tài khoản {email} vào {file_path}")
     else:
         logger.warning(f"CẢNH BÁO: Tài khoản {email} đã tồn tại, không lưu lại")
 
@@ -223,7 +225,7 @@ def log_failed_account(email, file_path):
         if "captcha.txt" not in file_path:
             logger.warning(f"CẢNH BÁO: Đã ghi tài khoản lỗi {email} vào {file_path}")
     elif "captcha.txt" not in file_path:
-        logger.info(f"THÔNG TIN: Tài khoản {email} đã có trong {file_path}, không ghi lại")
+        logger.info(f"Tài khoản {email} đã có trong {file_path}, không ghi lại")
 
 def click_element(driver, element, timeout=10):
     try:
@@ -243,7 +245,7 @@ def get_2fa_code(secret_key):
         response = requests.get(url)
         if response.status_code == 200:
             data = response.json()
-            logger.info(f"THÔNG TIN: Lấy được mã 2FA cho khóa: {secret_key} - {data.get('token')}")
+            logger.info(f"{secret_key} - {data.get('token')}")
             return data.get('token')
         else:
             logger.error(f"Không lấy được mã 2FA cho khóa: {secret_key}")
@@ -260,10 +262,10 @@ def select_autocomplete(driver):
         driver.switch_to.active_element.send_keys(Keys.DOWN)
         time.sleep(random.uniform(0.1, 0.3))  # Chờ ngắn để mô phỏng hành vi người dùng
         driver.switch_to.active_element.send_keys(Keys.ENTER)
-        logger.info("THÔNG TIN: Đã chọn gợi ý autocomplete cho địa chỉ")
+        logger.info("Đã chọn gợi ý autocomplete cho địa chỉ")
     except Exception:
         # Nếu không có autocomplete, tiếp tục
-        logger.info("THÔNG TIN: Không tìm thấy autocomplete, tiếp tục nhập địa chỉ")
+        logger.info("Không tìm thấy autocomplete, tiếp tục nhập địa chỉ")
 def check_login(driver, email, password):
     try:
         wait = WebDriverWait(driver, 15)
@@ -508,7 +510,7 @@ def register_amazon(email, orderid, username, proxy, password, shopgmail_api):
             log_failed_account(email, "captcha.txt")
             return False
         save_account(email, password, backup_code)
-        logger.info(f"THÔNG TIN: Đăng ký thành công {email}")
+        logger.info(f"Đăng ký thành công {email}")
         try:
                 logo = driver.find_element(By.ID, "nav-logo")
                 click_element(driver, logo)
@@ -571,10 +573,35 @@ def worker(index, proxy, username, password, shopgmail_api):
     except Exception as e:
         logger.error(f"Lỗi ở luồng {index}: {e}")
 
+def check_stop_key(task_queue):
+    threading.current_thread().name = "Dừng"
+    while not stop_event.is_set():
+        key = input()
+        if key.strip().lower() == "x":
+            logger.warning("ĐÃ TẮT HẾT LUỒNG CHƯA CHẠY")
+            stop_event.set()
+            with task_queue.mutex:
+                task_queue.queue.clear()
+            break
+def worker_from_queue(task_queue):
+    while True:
+        try:
+            task = task_queue.get(timeout=0.5)
+        except Empty:
+            if stop_event.is_set():
+                break
+            continue
+        if task is None:  # tín hiệu kết thúc
+            task_queue.task_done()
+            break
+        func, args = task
+        func(*args)
+        task_queue.task_done()
 # Hàm chính
+
 def main():
     # Nhập API key và số lượng tài khoản
-    logger.info("THÔNG TIN: Đang kiểm tra apikey api.shopgmail9999.com")
+    logger.info("Đang kiểm tra apikey api.shopgmail9999.com")
     apikey = read_file("apikey.txt")
     if not apikey:
         logger.error("CẢNH BÁO: Không tìm thấy apikey. Vui lý nhập apikey.txt")
@@ -602,19 +629,28 @@ def main():
         return
     max_threads = min(max_threads, min_length)
     logger.info(f"🔧 Sẽ xử lý {min_length} tài khoản với {max_threads} luồng")
-    # Xử lý tài khoản đồng thời
+    logger.info("💡 Nhấn phím 'x' rồi Enter để dừng việc tạo tài khoản mới, nhưng vẫn để các luồng đang chạy hoàn tất.")
+
+    task_queue = Queue()
+
+    threading.Thread(target=check_stop_key, args=(task_queue,), daemon=True).start()
+
     with ThreadPoolExecutor(max_workers=max_threads) as executor:
-        futures = []
+        for _ in range(max_threads):
+            executor.submit(worker_from_queue, task_queue)
+
         for i in range(min_length):
+            if stop_event.is_set():
+                break
             proxy = proxies[i % len(proxies)].strip() if proxies else ""
-            futures.append(executor.submit(
-                worker,
-                i, proxy, usernames[i], passwords[i], shopgmail_api
-            ))
+            task_queue.put((worker, (i, proxy, usernames[i], passwords[i], shopgmail_api)))
             time.sleep(1)
 
-        for future in futures:
-            future.result()
+        while not task_queue.empty() and not stop_event.is_set():
+            time.sleep(0.1)
+
+        for _ in range(max_threads):
+            task_queue.put(None)
 
     logger.info("🎉 Hoàn tất xử lý toàn bộ tài khoản.")
 
