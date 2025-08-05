@@ -279,7 +279,7 @@ def check_login(driver, email, password):
             click_element(driver, driver.find_element(By.ID, "continue-announce"))
 
         time.sleep(3)
-        if "ap/cvf" in driver.current_url or handle_captcha(driver, email):
+        if "ap/cvf" in driver.current_url or not handle_captcha(driver, email):
             logger.error(f"🚫 CAPTCHA sau email: {email}")
             return False, "CAPTCHA"
 
@@ -293,7 +293,7 @@ def check_login(driver, email, password):
             click_element(driver, driver.find_element(By.ID, "signInSubmit"))
 
         time.sleep(5)
-        if "ap/cvf" in driver.current_url or handle_captcha(driver, email):
+        if "ap/cvf" in driver.current_url or not handle_captcha(driver, email):
             logger.error(f"🚫 CAPTCHA sau mật khẩu: {email}")
             return False, "CAPTCHA"
         return True, None
