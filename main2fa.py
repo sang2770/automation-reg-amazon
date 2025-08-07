@@ -457,29 +457,36 @@ def register_amazon(email, orderid, username, proxy, password, shopgmail_api):
             time.sleep(15)
         driver.refresh()
         time.sleep(15)
-        is_registered = True
         # Kích hoạt 2FA
-        WebDriverWait(driver, 10).until(EC.element_to_be_clickable((By.ID, "TWO_STEP_VERIFICATION_BUTTON"))).click()
-        
+        is_registered = True
+        turn_on_2fa = driver.find_element(By.ID, "TWO_STEP_VERIFICATION_BUTTON")
+        try: 
+            turn_on_2fa.click()
+        except Exception as e:
+            click_element(driver, turn_on_2fa)
         time.sleep(5)  # Wait for the page to load
-        # get OTP again
-        otp_2fa = shopgmail_api.get_otp(orderid)
-        if not otp_2fa:
-            logger.error(f"CẢNH BÁO: Không lý OTP 2FA cho {email}")
-            log_failed_account(email, "captcha.txt")
-            return False
-            
-        form_otp_check = findElement(driver, "#verification-code-form", "#input-box-otp")
-        if form_otp_check:
-            otp_field_2fa = findElement(driver, "#input-box-otp", "form input")
-            otp_2fa = shopgmail_api.get_otp(orderid)
-            if not otp_2fa:
-                logger.error(f"CẢNH BÁO: Không lý OTP 2FA cho {email}")
-                log_failed_account(email, "captcha.txt")
-                return False
-            human_type(otp_field_2fa, otp_2fa)
-            formConfirm = wait.until(EC.presence_of_element_located((By.ID, "verification-code-form")))
-            formConfirm.submit()
+        def input_otp():
+            form_otp_check = findElement(driver, "#verification-code-form", "#input-box-otp")
+            if form_otp_check:
+                otp_field_2fa = findElement(driver, "#input-box-otp", "form input")
+                otp_2fa = shopgmail_api.get_otp(orderid)
+                if not otp_2fa:
+                    logger.error(f"CẢNH BÁO: Không lý OTP 2FA cho {email}")
+                    log_failed_account(email, "captcha.txt")
+                    return False
+                human_type(otp_field_2fa, otp_2fa)
+                formConfirm = wait.until(EC.presence_of_element_located((By.ID, "verification-code-form")))
+                formConfirm.submit()
+            # Confirm button enable-mfa-form-submit
+            try: 
+                enable_chechbox = wait.until(EC.presence_of_element_located((By.NAME, "trustThisDevice")))
+                click_element(driver, enable_chechbox)
+                enable_2fa_form = wait.until(EC.presence_of_element_located((By.ID, "enable-mfa-form")))
+                enable_2fa_form.submit()
+            except:
+                pass
+
+        input_otp()
         
         # Kiểm tra CAPTCHA lần nữa
         if not handle_captcha(driver, email):
@@ -487,7 +494,8 @@ def register_amazon(email, orderid, username, proxy, password, shopgmail_api):
             return False
         
         # Id cvf-submit-otp-button
-        click_element(driver, driver.find_element(By.ID, "sia-otp-accordion-totp-header"))
+        section_otp = wait.until(EC.presence_of_element_located((By.ID, "sia-otp-accordion-totp-header")))
+        click_element(driver, section_otp)
         # get sia-auth-app-formatted-secret
         backup_code = driver.find_element(By.ID, "sia-auth-app-formatted-secret").text
         
@@ -498,26 +506,24 @@ def register_amazon(email, orderid, username, proxy, password, shopgmail_api):
             log_failed_account(email, "captcha.txt")
             return False
         
-        otp_field_2fa = WebDriverWait(driver, 10).until(EC.presence_of_element_located((By.ID, "ch-auth-app-code-input")))
+        otp_field_2fa = wait.until(EC.presence_of_element_located((By.ID, "ch-auth-app-code-input")))
         human_type(otp_field_2fa, otp_2fa)
-        formConfirm =  WebDriverWait(driver, 10).until(EC.presence_of_element_located((By.ID, "sia-add-auth-app-form")))
+        formConfirm =  wait.until(EC.presence_of_element_located((By.ID, "sia-add-auth-app-form")))
         formConfirm.submit()
+        time.sleep(10)
         
         # Kiểm tra CAPTCHA lần nữa
         if not handle_captcha(driver, email):
             log_failed_account(email, "captcha.txt")
             return False
-
-        # Confirm button enable-mfa-form-submit
-        enable_chechbox = driver.find_element(By.NAME, "trustThisDevice")
-        click_element(driver, enable_chechbox)
-        enable_2fa_form = WebDriverWait(driver, 10).until(EC.presence_of_element_located((By.ID, "enable-mfa-form")))
-        enable_2fa_form.submit()
+        input_otp()
         
         # Kiểm tra CAPTCHA lần nữa
         if not handle_captcha(driver, email):
             log_failed_account(email, "captcha.txt")
             return False
+    
+        input_otp()
         save_account(email, password, backup_code)
         logger.info(f"Đăng ký thành công {email}")
         try:

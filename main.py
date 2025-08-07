@@ -484,18 +484,28 @@ def register_amazon(email, orderid, username, sdt, address, proxy, password, sho
         except Exception as e:
             click_element(driver, turn_on_2fa)
         time.sleep(5)  # Wait for the page to load
+        def input_otp():
+            form_otp_check = findElement(driver, "#verification-code-form", "#input-box-otp")
+            if form_otp_check:
+                otp_field_2fa = findElement(driver, "#input-box-otp", "form input")
+                otp_2fa = shopgmail_api.get_otp(orderid)
+                if not otp_2fa:
+                    logger.error(f"CẢNH BÁO: Không lý OTP 2FA cho {email}")
+                    log_failed_account(email, "captcha.txt")
+                    return False
+                human_type(otp_field_2fa, otp_2fa)
+                formConfirm = wait.until(EC.presence_of_element_located((By.ID, "verification-code-form")))
+                formConfirm.submit()
+            # Confirm button enable-mfa-form-submit
+            try: 
+                enable_chechbox = wait.until(EC.presence_of_element_located((By.NAME, "trustThisDevice")))
+                click_element(driver, enable_chechbox)
+                enable_2fa_form = wait.until(EC.presence_of_element_located((By.ID, "enable-mfa-form")))
+                enable_2fa_form.submit()
+            except:
+                pass
 
-        form_otp_check = findElement(driver, "#verification-code-form", "#input-box-otp")
-        if form_otp_check:
-            otp_field_2fa = findElement(driver, "#input-box-otp", "form input")
-            otp_2fa = shopgmail_api.get_otp(orderid)
-            if not otp_2fa:
-                logger.error(f"CẢNH BÁO: Không lý OTP 2FA cho {email}")
-                log_failed_account(email, "captcha.txt")
-                return False
-            human_type(otp_field_2fa, otp_2fa)
-            formConfirm = wait.until(EC.presence_of_element_located((By.ID, "verification-code-form")))
-            formConfirm.submit()
+        input_otp()
         
         # Kiểm tra CAPTCHA lần nữa
         if not handle_captcha(driver, email):
@@ -519,23 +529,20 @@ def register_amazon(email, orderid, username, sdt, address, proxy, password, sho
         human_type(otp_field_2fa, otp_2fa)
         formConfirm =  wait.until(EC.presence_of_element_located((By.ID, "sia-add-auth-app-form")))
         formConfirm.submit()
+        time.sleep(10)
         
         # Kiểm tra CAPTCHA lần nữa
         if not handle_captcha(driver, email):
             log_failed_account(email, "captcha.txt")
             return False
-
-        # Confirm button enable-mfa-form-submit
-        enable_chechbox = wait.until(EC.presence_of_element_located((By.NAME, "trustThisDevice")))
-        click_element(driver, enable_chechbox)
-        enable_2fa_form = wait.until(EC.presence_of_element_located((By.ID, "enable-mfa-form")))
-        enable_2fa_form.submit()
+        input_otp()
         
         # Kiểm tra CAPTCHA lần nữa
         if not handle_captcha(driver, email):
             log_failed_account(email, "captcha.txt")
             return False
-
+    
+        input_otp()
         
         # Điều hướng đến sổ địa chỉ
         driver.get(getattr(config, "amazon_add_link","https://www.amazon.com/a/addresses"))
@@ -554,60 +561,52 @@ def register_amazon(email, orderid, username, sdt, address, proxy, password, sho
             # Tìm tất cả input có type="search"
             target_input = driver.find_element(By.CSS_SELECTOR, 'input[type="search"]')
             logger.info(f" Đã tìm thấy input địa chỉ")
-            if target_input:
-                click_element(driver, target_input)
-                time.sleep(2)
-                human_type(target_input, address)
-                time.sleep(10)
-
-                address_links = driver.find_elements(By.CSS_SELECTOR, ".a-spacing-mini.a-link-normal")
-                if address_links:
+            click_element(driver, target_input)
+            time.sleep(2)
+            human_type(target_input, address)
+            time.sleep(10)
+            address_links = driver.find_elements(By.CSS_SELECTOR, ".a-spacing-mini.a-link-normal")
+            if address_links:
                     click_element(driver, address_links[0])
                     time.sleep(3)
-                else:
-                    print("No address links found.")
-                try:
-                        btn_add = driver.find_element(By.CSS_SELECTOR, "[value='Add to address book']")
-                        click_element(driver, btn_add)
-                except:
-                        print("Add to address book button not found.")
             else:
-                print("Target input not found.")
+                    raise Exception("No address links found.")
+            btn_add = driver.find_element(By.CSS_SELECTOR, "[value='Add to address book']")
+            click_element(driver, btn_add)
             time.sleep(10)
             
             # Kiểm tra CAPTCHA lần nữa
             if not handle_captcha(driver, email):
                 log_failed_account(email, "captcha.txt")
                 return False
-            
-            # # Lưu tài khoản thành công
-            save_account(email, password, backup_code)
-            logger.info(f" Đăng ký thành công {email}. Thực hiện click logo.")
-            try:
-                logo = driver.find_element(By.ID, "nav-logo")
-                click_element(driver, logo)
-            except:
-                driver.get("https://www.amazon.com/ref=navm_hdr_logo")
-            time.sleep(5)
-            item_selects = driver.find_elements(By.CSS_SELECTOR, '#desktop-grid-2 .a-link-normal')
-            if len(item_selects) == 0:
-                item_selects = driver.find_elements(By.CSS_SELECTOR, '[role="listitem"]')
-            if len(item_selects) > 3:
-                click_element(driver, item_selects[3])
-            elif len(item_selects) > 2:
-                click_element(driver, item_selects[2])
-            elif len(item_selects) > 1:
-                click_element(driver, item_selects[1])
-            elif len(item_selects) > 0:
-                click_element(driver, item_selects[0])
-            else:
-                driver.get("https://www.amazon.com/b/?ie=UTF8&node=19277531011&ref_=af_gw_quadtopcard_f_july_xcat_cml_1&pd_rd_w=Z5OwE&content-id=amzn1.sym.28c8c8b7-487d-484e-96c7-4d7d067b06ed&pf_rd_p=28c8c8b7-487d-484e-96c7-4d7d067b06ed&pf_rd_r=J2YGJMS1OWWSAF1TRRA8&pd_rd_wg=RP51i&pd_rd_r=10053101-20a0-4a52-9465-faf1daa6535e")
-            time.sleep(15)
-            return True
         except Exception as e:
             logger.error(f"CẢNH BÁO: Thêm địa chỉ thất bại cho {email}: {str(e)}")
             log_failed_account(email + "|" + password + "|" + backup_code, "chua_add.txt")
             return False
+        # # Lưu tài khoản thành công
+        save_account(email, password, backup_code)
+        logger.info(f" Đăng ký thành công {email}. Thực hiện click logo.")
+        try:
+                logo = driver.find_element(By.ID, "nav-logo")
+                click_element(driver, logo)
+        except:
+                driver.get("https://www.amazon.com/ref=navm_hdr_logo")
+        time.sleep(5)
+        item_selects = driver.find_elements(By.CSS_SELECTOR, '#desktop-grid-2 .a-link-normal')
+        if len(item_selects) == 0:
+                item_selects = driver.find_elements(By.CSS_SELECTOR, '[role="listitem"]')
+        if len(item_selects) > 3:
+                click_element(driver, item_selects[3])
+        elif len(item_selects) > 2:
+                click_element(driver, item_selects[2])
+        elif len(item_selects) > 1:
+                click_element(driver, item_selects[1])
+        elif len(item_selects) > 0:
+                click_element(driver, item_selects[0])
+        else:
+                driver.get("https://www.amazon.com/b/?ie=UTF8&node=19277531011&ref_=af_gw_quadtopcard_f_july_xcat_cml_1&pd_rd_w=Z5OwE&content-id=amzn1.sym.28c8c8b7-487d-484e-96c7-4d7d067b06ed&pf_rd_p=28c8c8b7-487d-484e-96c7-4d7d067b06ed&pf_rd_r=J2YGJMS1OWWSAF1TRRA8&pd_rd_wg=RP51i&pd_rd_r=10053101-20a0-4a52-9465-faf1daa6535e")
+        time.sleep(15)
+        return True
     except Exception as e:
         logger.error(f"CẢNH BÁO: Lỗi khi xử lý {email}: {str(e)}\n{traceback.format_exc()}")
         log_failed_account(email, "captcha.txt")
