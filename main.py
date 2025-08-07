@@ -302,6 +302,15 @@ def check_login(driver, email, password):
         traceback_str = traceback.format_exc()
         logger.debug(f"Chi tiết lỗi:\n{traceback_str}")
         return False, repr(e)
+
+def findElement(driver, selector, backup_selector=None):
+            try:
+                return driver.find_element(By.CSS_SELECTOR, selector)
+            except:
+                try:
+                    return driver.find_element(By.CSS_SELECTOR, backup_selector)
+                except:
+                    return None
 # Hàm đăng ký Amazon chính
 def register_amazon(email, orderid, username, sdt, address, proxy, password, shopgmail_api):
     gemlogin = GemLoginAPI()
@@ -423,22 +432,25 @@ def register_amazon(email, orderid, username, sdt, address, proxy, password, sho
             logger.error(f"CẢNH BÁO: Không tạo được tài khoản cho {email}")
             log_failed_account(email, "captcha.txt")
             return False
-        # Lấy OTP để xác minh Gmail
-        otp = shopgmail_api.get_otp(orderid)
-        if not otp:
-            logger.error(f"CẢNH BÁO: Không lấy được OTP cho {email}")
-            log_failed_account(email, "captcha.txt")
-            return False
-        
-        otp_field = wait.until(EC.presence_of_element_located((By.ID, "cvf-input-code")))
-        human_type(otp_field, otp)
-        try:
-            verify_button = WebDriverWait(driver, 10).until(EC.presence_of_element_located((By.CSS_SELECTOR, "input[aria-label='Verify OTP Button']")))
-            click_element(driver, verify_button)
-        except:
-            verify_form = driver.find_element(By.ID, "verification-code-form") 
-            verify_form.submit()
-        time.sleep(10)
+        otp_check = findElement(driver, "input[aria-label='Verify OTP Button']", "#verification-code-form")
+        if otp_check:
+            # Lấy OTP để xác minh Gmail
+            otp = shopgmail_api.get_otp(orderid)
+            if not otp:
+                logger.error(f"CẢNH BÁO: Không lấy được OTP cho {email}")
+                log_failed_account(email, "captcha.txt")
+                return False
+            otp_field = wait.until(EC.presence_of_element_located((By.ID, "cvf-input-code")))
+            human_type(otp_field, otp)
+            try:
+                verify_button = WebDriverWait(driver, 10).until(EC.presence_of_element_located((By.CSS_SELECTOR, "input[aria-label='Verify OTP Button']")))
+                click_element(driver, verify_button)
+            except:
+                verify_form = driver.find_element(By.ID, "verification-code-form") 
+                verify_form.submit()
+            time.sleep(10)
+        else: 
+            time.sleep(5)
         # Kiểm tra CAPTCHA lần nữa
         if not handle_captcha(driver, email):
             log_failed_account(email, "captcha.txt")
@@ -461,7 +473,9 @@ def register_amazon(email, orderid, username, sdt, address, proxy, password, sho
             except:
                 if "www.amazon.com/ax/account/manage" not in driver.current_url:
                     driver.get("https://www.amazon.com/ax/account/manage?openid.return_to=https%3A%2F%2Fwww.amazon.com%2Fyour-account%3Fref_%3Dya_cnep&openid.assoc_handle=anywhere_v2_us&shouldShowPasskeyLink=true&passkeyEligibilityArb=23254432-b9cb-4b93-98b6-ba9ed5e45a65&passkeyMetricsActionId=07975eeb-087d-42ab-971d-66c2807fe4f5")
-            time.sleep(10)
+            time.sleep(15)
+        driver.refresh()
+        time.sleep(15)
         # Kích hoạt 2FA
         is_registered = True
         turn_on_2fa = driver.find_element(By.ID, "TWO_STEP_VERIFICATION_BUTTON")
@@ -470,25 +484,18 @@ def register_amazon(email, orderid, username, sdt, address, proxy, password, sho
         except Exception as e:
             click_element(driver, turn_on_2fa)
         time.sleep(5)  # Wait for the page to load
-        # get OTP again
-        otp_2fa = shopgmail_api.get_otp(orderid)
-        if not otp_2fa:
-            logger.error(f"CẢNH BÁO: Không lý OTP 2FA cho {email}")
-            log_failed_account(email, "captcha.txt")
-            return False
-        def findElement(driver, selector, backup_selector=None):
-            try:
-                return driver.find_element(By.CSS_SELECTOR, selector)
-            except NoSuchElementException:
-                if backup_selector:
-                    return driver.find_element(By.CSS_SELECTOR, backup_selector)
-                return None
-            
-        otp_field_2fa = findElement(driver, "#input-box-otp", "form input")
 
-        human_type(otp_field_2fa, otp_2fa)
-        formConfirm =  wait.until(EC.presence_of_element_located((By.ID, "verification-code-form")))
-        formConfirm.submit()
+        form_otp_check = findElement(driver, "#verification-code-form", "#input-box-otp")
+        if form_otp_check:
+            otp_field_2fa = findElement(driver, "#input-box-otp", "form input")
+            otp_2fa = shopgmail_api.get_otp(orderid)
+            if not otp_2fa:
+                logger.error(f"CẢNH BÁO: Không lý OTP 2FA cho {email}")
+                log_failed_account(email, "captcha.txt")
+                return False
+            human_type(otp_field_2fa, otp_2fa)
+            formConfirm = wait.until(EC.presence_of_element_located((By.ID, "verification-code-form")))
+            formConfirm.submit()
         
         # Kiểm tra CAPTCHA lần nữa
         if not handle_captcha(driver, email):
@@ -536,9 +543,13 @@ def register_amazon(email, orderid, username, sdt, address, proxy, password, sho
         try:
             pickup_address = driver.find_element(By.ID, "ya-myab-store-address-add-link-mobile")
             click_element(driver, pickup_address)
+            time.sleep(10)
         except:
             driver.get("https://www.amazon.com/location_selector?useCustomerContext=1&clientId=amazon_us_add_to_addressbook_mobile&countryCode=US&ref=ab_accessPoint_search_mobile")
+            time.sleep(10)
         # Thêm địa chỉ
+        driver.refresh()
+        time.sleep(15)
         try:
             # Tìm tất cả input có type="search"
             target_input = driver.find_element(By.CSS_SELECTOR, 'input[type="search"]')
@@ -553,13 +564,13 @@ def register_amazon(email, orderid, username, sdt, address, proxy, password, sho
                 if address_links:
                     click_element(driver, address_links[0])
                     time.sleep(3)
-                    try:
-                        btn_add = driver.find_element(By.CSS_SELECTOR, "[value='Add to address book']")
-                        click_element(driver, btn_add)
-                    except:
-                        print("Add to address book button not found.")
                 else:
                     print("No address links found.")
+                try:
+                        btn_add = driver.find_element(By.CSS_SELECTOR, "[value='Add to address book']")
+                        click_element(driver, btn_add)
+                except:
+                        print("Add to address book button not found.")
             else:
                 print("Target input not found.")
             time.sleep(10)
