@@ -1,3 +1,4 @@
+import sys
 import time
 import random
 import requests
@@ -19,10 +20,11 @@ import traceback
 import threading
 from queue import Queue, Empty
 import pyotp
+import os
 
 service = Service(ChromeDriverManager(driver_version="137.0.7151.122").install())
 stop_event = threading.Event()
-
+failed_start_profile_count = 0
 # Hàm đọc config.json
 def read_config(file_path):
     try:
@@ -69,11 +71,17 @@ class GemLoginAPI:
         return None
 
     def start_profile(self, profile_id):
+        global failed_start_profile_count
         # Khởi động trình duyệt cho cấu hình
         response = self.session.get(f"{self.base_url}/api/profiles/start/{profile_id}")
         if response.status_code == 200 and response.json().get("success"):
             return response.json().get("data", {})
         logger.error(f"CẢNH BÁO: Không khởi động được cấu hình {profile_id}")
+        failed_start_profile_count += 1
+        if (failed_start_profile_count >= 10):
+            stop_event.set()
+            time.sleep(5)
+            os._exit(1)
         return None
 
     def close_profile(self, profile_id):
@@ -248,6 +256,7 @@ def get_2fa_code(secret_key):
         totp = pyotp.TOTP(secret_key.replace(' ', ''))
         token = totp.now()
         logger.info(f"{secret_key} - {token}")
+        time.sleep(10)
         return token
     except Exception as e:
         logger.error(f"Lỗi khi tạo mã 2FA: {repr(e)}")
