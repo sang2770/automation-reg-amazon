@@ -459,7 +459,7 @@ def register_amazon(email, orderid, username, sdt, address, proxy, password, sho
                         return False
                     return True
                 except Exception:
-                    logger.warning(f"CẢNH BÁO: Lỗi khi xử lý liên kết đăng ký {start_link} cho {email}. Thử lại...")
+                    # logger.warning(f"CẢNH BÁO: Lỗi khi xử lý liên kết đăng ký {start_link} cho {email}. Thử lại...")
                     max_retry -= 1
             if max_retry == 0:
                 logger.error(f"CẢNH BÁO: Không tạo được tài khoản cho {email}")
