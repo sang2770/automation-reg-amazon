@@ -43,11 +43,11 @@ class GemLoginAPI:
         self.session = requests.Session()
 
     def create_profile(self, proxy, profile_name="AmazonProfile"):
-        # Tạo cấu hình mới với proxy SOCKS5 và hệ điều hành Android
+        # Tạo cấu hình mới với proxy HTTP và hệ điều hành Android
         payload = {
             "profile_name": f"{profile_name}_{random.randint(1000, 9999)}",
             "group_name": "All",
-            "raw_proxy": f"socks5://{proxy}",
+            "raw_proxy": f"http://{proxy}",
             "startup_urls": getattr(config, "reg_link", "https://www.amazon.com/amazonprime"),
             "is_noise_canvas": False,
             "is_noise_webgl": False,
@@ -391,25 +391,6 @@ def register_amazon(email, orderid, username, sdt, address, proxy, password, sho
                         else:
                             logger.error(f"Không tìm thấy button Sign up")
                             max_retry -= 1
-                    elif "woot.com" in start_link:
-                        time.sleep(10)
-                        driver.get("https://www.woot.com/?ref=mwj_gnav_home")
-                        time.sleep(10)
-                        driver.get("https://auth.woot.com/ap/signin?openid.ns=http%3a%2f%2fspecs.openid.net%2fauth%2f2.0&openid.identity=http%3a%2f%2fspecs.openid.net%2fauth%2f2.0%2fidentifier_select&openid.claimed_id=http%3a%2f%2fspecs.openid.net%2fauth%2f2.0%2fidentifier_select&rmrMeStringID=ap_rememeber_me_default_message&openid.ns.pape=http%3a%2f%2fspecs.openid.net%2fextensions%2fpape%2f1.0&server=%2fap%2fsignin%3fie%3dUTF8&openid.ns.oa2=http%3a%2f%2fwww.amazon.com%2fap%2fext%2foauth%2f2&openid.oa2.client_id=device%3a70c7390e4ff54cefbda52d3b5b7fbbca&openid.oa2.response_type=code&openid.oa2.code_challenge=ldYXwZ6IoyOaqes8uT0ac7R139zpEQMEJ23tQ6ByKZM&openid.oa2.code_challenge_method=S256&openid.mode=checkid_setup&openid.assoc_handle=amzn_woot_mobile_us&pageId=wootgreen&openid.oa2.scope=device_auth_access&openid.return_to=https%3a%2f%2faccount.woot.com%2fauth%3freturnUrl%3dhttps%253A%252F%252Faccount.woot.com%252F%26useNewUI%3duseNewUI%253Dtrue%26rebrand2025%3drebrand2025%253Dtrue%26verificationToken%3d0d5015773f3680f997e7f81631032320e163265b06fd3909924ff5d05da5e5ac&amzn_acc=true")
-                        time.sleep(10)
-                        btn_create = driver.find_element(By.ID, "createAccountSubmit")
-                        click_element(driver, btn_create)
-                    elif "zappos.com" in start_link:
-                        btn_user = driver.find_element(By.CSS_SELECTOR, "[aria-label='Sign In']")
-                        click_element(driver, btn_user)
-                        time.sleep(10)
-                        btn_sign_in = driver.find_element(By.ID, "amazonSignIn")
-                        click_element(driver, btn_sign_in)
-                        time.sleep(10)
-                    elif "imdb.com" in start_link:
-                        time.sleep(10)
-
-
                     # Chọn Tạo tài khoản
                     create_account_button = wait.until(EC.presence_of_element_located((By.ID, "register_accordion_header")))
                     click_element(driver, create_account_button)
