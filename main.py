@@ -400,15 +400,31 @@ def register_amazon(email, orderid, username, sdt, address, proxy, password, sho
                         btn_create = driver.find_element(By.ID, "createAccountSubmit")
                         click_element(driver, btn_create)
                     elif "zappos.com" in start_link:
-                        btn_user = driver.find_element(By.CSS_SELECTOR, "[aria-label='Sign In']")
-                        click_element(driver, btn_user)
-                        time.sleep(10)
-                        btn_sign_in = driver.find_element(By.ID, "amazonSignIn")
-                        click_element(driver, btn_sign_in)
-                        time.sleep(10)
+                        try:
+                            btn_user = driver.find_element(By.CSS_SELECTOR, "[aria-label='Sign In']")
+                            click_element(driver, btn_user)
+                            time.sleep(10)
+                            btn_sign_in = driver.find_element(By.ID, "amazonSignIn")
+                            click_element(driver, btn_sign_in)
+                            time.sleep(10)
+                        except:
+                            driver.get("https://www.zappos.com/federated-login")
+                            time.sleep(10)
+                            btn_sign_in = driver.find_element(By.ID, "amazonSignIn")
+                            click_element(driver, btn_sign_in)
+                            time.sleep(10)
                     elif "imdb.com" in start_link:
                         time.sleep(10)
-
+                        driver.get("https://www.imdb.com/registration/signin/?u=%2F&ref_=hm_nv_generic_lgin")
+                        time.sleep(10)
+                        #data-testid="create_account"
+                        create_account_button = wait.until(EC.presence_of_element_located((By.CSS_SELECTOR, "[data-testid='sign_in_option_AMAZON']")))
+                        click_element(driver, create_account_button)
+                        time.sleep(10)
+                        ##createAccountSubmit
+                        create_account_button = wait.until(EC.presence_of_element_located((By.ID, "createAccountSubmit")))
+                        click_element(driver, create_account_button)
+                        time.sleep(10)
 
                     # Chọn Tạo tài khoản
                     create_account_button = wait.until(EC.presence_of_element_located((By.ID, "register_accordion_header")))
@@ -443,6 +459,7 @@ def register_amazon(email, orderid, username, sdt, address, proxy, password, sho
                         return False
                     return True
                 except Exception:
+                    logger.warning(f"CẢNH BÁO: Lỗi khi xử lý liên kết đăng ký {start_link} cho {email}. Thử lại...")
                     max_retry -= 1
             if max_retry == 0:
                 logger.error(f"CẢNH BÁO: Không tạo được tài khoản cho {email}")
