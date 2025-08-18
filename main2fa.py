@@ -46,7 +46,7 @@ class GemLoginAPI:
         payload = {
             "profile_name": f"{profile_name}_{random.randint(1000, 9999)}",
             "group_name": "All",
-            "raw_proxy": f"socks5://{proxy}",
+            "raw_proxy": f"http://{proxy}",
             "startup_urls": getattr(config, "reg_link", "https://www.amazon.com/amazonprime"),
             "is_noise_canvas": False,
             "is_noise_webgl": False,
@@ -237,15 +237,20 @@ def log_failed_account(email, file_path):
 
 def click_element(driver, element, timeout=10):
     try:
-        time.sleep(2)
-        element.click()
-    except TimeoutException:
-        logger.error("Timeout chờ element có thể click")
-    except Exception as ex:
+        time.sleep(3)
         # Scroll element vào giữa màn hình
         driver.execute_script("arguments[0].scrollIntoView({block: 'center'});", element)
         # Click bằng JS
         driver.execute_script("arguments[0].click();", element)
+    except TimeoutException:
+        logger.error("Timeout chờ element có thể click")
+    except Exception as ex:
+        try:
+            element.click()
+        except Exception as e:
+            logger.error(f"Lỗi khi click element: {repr(e)}")
+            logger.debug(f"Chi tiết lỗi: {traceback.format_exc()}")
+            raise ex
 
 def get_2fa_code(secret_key):
     try:
@@ -270,26 +275,35 @@ def select_autocomplete(driver):
     except Exception:
         # Nếu không có autocomplete, tiếp tục
         logger.info("Không tìm thấy autocomplete, tiếp tục nhập địa chỉ")
+
 def check_login(driver, email, password):
     try:
         wait = WebDriverWait(driver, 15)
         # Nhập email
         email_input = wait.until(EC.visibility_of_element_located((By.ID, "ap_email_login")))
         human_type(email_input, email)
-        click_element(driver, driver.find_element(By.ID, "continue-announce"))
+        try:
+            form_login = driver.find_element(By.CSS_SELECTOR, "form[name='signIn']")
+            form_login.submit() 
+        except:
+            click_element(driver, driver.find_element(By.ID, "continue-announce"))
 
         time.sleep(3)
-        if "ap/cvf" in driver.current_url or driver.find_elements(By.ID, "captchacharacters"):
+        if "ap/cvf" in driver.current_url or not handle_captcha(driver, email):
             logger.error(f"🚫 CAPTCHA sau email: {email}")
             return False, "CAPTCHA"
 
         # Nhập mật khẩu
         pwd_input = wait.until(EC.visibility_of_element_located((By.ID, "ap_password")))
         human_type(pwd_input, password)
-        click_element(driver, driver.find_element(By.ID, "signInSubmit"))
+        try:
+            form_login = driver.find_element(By.CSS_SELECTOR, "form[name='signIn']")
+            form_login.submit()
+        except: 
+            click_element(driver, driver.find_element(By.ID, "signInSubmit"))
 
         time.sleep(5)
-        if "ap/cvf" in driver.current_url or driver.find_elements(By.ID, "captchacharacters"):
+        if "ap/cvf" in driver.current_url or not handle_captcha(driver, email):
             logger.error(f"🚫 CAPTCHA sau mật khẩu: {email}")
             return False, "CAPTCHA"
         return True, None
@@ -298,6 +312,7 @@ def check_login(driver, email, password):
         traceback_str = traceback.format_exc()
         logger.debug(f"Chi tiết lỗi:\n{traceback_str}")
         return False, repr(e)
+
 
 def findElement(driver, selector, backup_selector=None):
             try:
@@ -366,7 +381,6 @@ def register_amazon(email, orderid, username, proxy, password, shopgmail_api):
                         if sign_up_btn:
                             # sign_up_btn.click()
                             click_element(driver, sign_up_btn)
-                            logger.info(f"TxxxxHÔNG TIN: Tạo tài khoản cho {email}")
                         else:
                             logger.error(f"Không tìm thấy button Sign up")
                             max_retry -= 1
@@ -614,6 +628,7 @@ def register_and_cleanup(i, email, orderid, username, proxy, password, api):
 
 def worker(index, proxy, username, password, shopgmail_api):
     try:
+        threading.current_thread().name = f"{index + 1}"
         # Tạo Gmail
         while True:
             try:

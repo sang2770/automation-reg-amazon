@@ -240,16 +240,21 @@ def log_failed_account(email, file_path):
 
 def click_element(driver, element, timeout=10):
     try:
-        time.sleep(2)
-        element.click()
-    except TimeoutException:
-        logger.error("Timeout chờ element có thể click")
-    except Exception as ex:
+        time.sleep(3)
         # Scroll element vào giữa màn hình
         driver.execute_script("arguments[0].scrollIntoView({block: 'center'});", element)
         # Click bằng JS
         driver.execute_script("arguments[0].click();", element)
-
+    except TimeoutException:
+        logger.error("Timeout chờ element có thể click")
+    except Exception as ex:
+        try:
+            element.click()
+        except Exception as e:
+            logger.error(f"Lỗi khi click element: {repr(e)}")
+            logger.debug(f"Chi tiết lỗi: {traceback.format_exc()}")
+            raise ex
+    
 def get_2fa_code(secret_key):
     try:
         # Loại bỏ khoảng trắng và tạo đối tượng TOTP
