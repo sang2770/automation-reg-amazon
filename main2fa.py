@@ -327,11 +327,10 @@ def findElement(driver, selector, backup_selector=None):
 def register_amazon(email, orderid, username, proxy, password, shopgmail_api):
     gemlogin = GemLoginAPI()
 
-    # Tạo Gmail mới
     if not email or not orderid:
         logger.error("CẢNH BÁO: Không thể tạo Gmail mới")
         return False
-    
+    time.sleep(15)
     # Tạo cấu hình mới
     profile_id = gemlogin.create_profile(proxy, f"Profile_{email}")
     if not profile_id:
@@ -364,12 +363,14 @@ def register_amazon(email, orderid, username, proxy, password, shopgmail_api):
         def handle_reg_link(start_link):
             max_retry = 5
             while max_retry > 0:
+                time.sleep(5)
                 try:
                     if not driver.session_id:
                         logger.error(f"Phiên làm việc gemLogin đã chết hoặc chưa được khởi tạo với {email}")
                         return False
                     driver.get(start_link)
-                    time.sleep(15)
+                    time.sleep(10)
+
                     if "www.amazon.com/amazonprime" in start_link:
                         form = wait.until(
                             EC.presence_of_element_located((By.CSS_SELECTOR, 'form[action="/gp/prime/pipeline/membersignup"]'))
@@ -445,7 +446,10 @@ def register_amazon(email, orderid, username, proxy, password, shopgmail_api):
                     # password = ''.join(random.choices(string.ascii_letters + string.digits, k=12))
                     # password = "123456aA@Sang"
                     password_field = driver.find_element(By.ID, "ap_password")
+                    click_element(driver, password_field)
+                    time.sleep(3)
                     human_type(password_field, password)
+
                     try:
                         register_form = driver.find_element(By.ID, "ap_register_form")
                         register_form.submit()
@@ -458,6 +462,7 @@ def register_amazon(email, orderid, username, proxy, password, shopgmail_api):
                         return False
                     return True
                 except Exception:
+                    # logger.warning(f"CẢNH BÁO: Lỗi khi xử lý liên kết đăng ký {start_link} cho {email}. Thử lại...")
                     max_retry -= 1
             if max_retry == 0:
                 logger.error(f"CẢNH BÁO: Không tạo được tài khoản cho {email}")
@@ -494,7 +499,6 @@ def register_amazon(email, orderid, username, proxy, password, shopgmail_api):
             time.sleep(10)
         else: 
             time.sleep(5)
-
         # Kiểm tra CAPTCHA lần nữa
         if not handle_captcha(driver, email):
             log_failed_account(email, "captcha.txt")
@@ -509,7 +513,14 @@ def register_amazon(email, orderid, username, proxy, password, shopgmail_api):
                 logger.error(f"Đăng nhập thất bại cho tài khoản {email}: {error_reason}")
                 log_failed_account(email, "captcha.txt")
                 return False
-            driver.get(getattr(config, "2fa_amazon_link", "https://www.amazon.com/ax/account/manage?openid.return_to=https%3A%2F%2Fwww.amazon.com%2Fyour-account%3Fref_%3Dya_cnep&openid.assoc_handle=anywhere_v2_us&shouldShowPasskeyLink=true&passkeyEligibilityArb=23254432-b9cb-4b93-98b6-ba9ed5e45a65&passkeyMetricsActionId=07975eeb-087d-42ab-971d-66c2807fe4f5"))
+            time.sleep(10)
+            # ap-account-fixup-phone-skip-link
+            try:
+                skip = driver.find_element(By.ID, "ap-account-fixup-phone-skip-link")       
+                click_element(driver, skip)
+            except:
+                if "www.amazon.com/ax/account/manage" not in driver.current_url:
+                    driver.get("https://www.amazon.com/ax/account/manage?openid.return_to=https%3A%2F%2Fwww.amazon.com%2Fyour-account%3Fref_%3Dya_cnep&openid.assoc_handle=anywhere_v2_us&shouldShowPasskeyLink=true&passkeyEligibilityArb=23254432-b9cb-4b93-98b6-ba9ed5e45a65&passkeyMetricsActionId=07975eeb-087d-42ab-971d-66c2807fe4f5")
             time.sleep(15)
         driver.refresh()
         time.sleep(15)
@@ -580,6 +591,7 @@ def register_amazon(email, orderid, username, proxy, password, shopgmail_api):
             return False
     
         input_otp()
+        
         save_account(email, password, backup_code)
         logger.info(f"Đăng ký thành công {email}")
         try:
