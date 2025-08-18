@@ -326,7 +326,7 @@ def findElement(driver, selector, backup_selector=None):
                 except:
                     return None
 # Hàm đăng ký Amazon chính
-def register_amazon(email, orderid, username, sdt, address, proxy, password, shopgmail_api):
+def register_amazon(email, orderid, username, sdt, address, proxy, password, shopgmail_api, address_2):
     gemlogin = GemLoginAPI()
 
     if not email or not orderid:
@@ -632,6 +632,29 @@ def register_amazon(email, orderid, username, sdt, address, proxy, password, sho
             logger.error(f"CẢNH BÁO: Thêm địa chỉ thất bại cho {email}: {str(e)}")
             log_failed_account(email + "|" + password + "|" + backup_code, "chua_add.txt")
             return False
+        
+        # add address2
+        if address_2:
+            driver.get(getattr(config, "amazon_add_link","https://www.amazon.com/a/addresses/add?ref=ya_address_book_add_button"))
+            time.sleep(10)
+            try:
+                address_field = driver.find_element(By.ID, "address-ui-widgets-enterAddressFullName")
+                human_type(address_field, username)
+                
+                phone_field = driver.find_element(By.ID, "address-ui-widgets-enterAddressPhoneNumber")
+                human_type(phone_field, sdt)
+                
+                address_lines = address.split(", ")
+                human_type(driver.find_element(By.ID, "address-ui-widgets-enterAddressLine1"), address_lines[0])
+                select_autocomplete(driver)
+                if len(address_lines) > 1:
+                    driver.find_element(By.ID, "address-ui-widgets-enterAddressLine2").send_keys(address_lines[1])
+                # submit form address-ui-address-form
+                formConfirm =  WebDriverWait(driver, 10).until(EC.presence_of_element_located((By.ID, "address-ui-address-form")))
+                formConfirm.submit()
+            except Exception as e:
+                logger.error(f"CẢNH BÁO: Thêm địa chỉ 2 thất bại cho {email}: {str(e)}")
+                log_failed_account(email + "|" + password + "|" + backup_code, "chua_add.txt")
         # # Lưu tài khoản thành công
         save_account(email, password, backup_code)
         logger.info(f" Đăng ký thành công {email}. Thực hiện click logo.")
@@ -669,9 +692,9 @@ def register_amazon(email, orderid, username, sdt, address, proxy, password, sho
         #     logger.error(f"CẢNH BÁO: Không xóa được cấu hình {profile_id} cho {email}")
 
 
-def register_and_cleanup(i, email, orderid, username, sdt, address, proxy, password, api):
+def register_and_cleanup(i, email, orderid, username, sdt, address, proxy, password, api, address_2):
     try:
-        success = register_amazon(email, orderid, username, sdt, address, proxy, password, api)
+        success = register_amazon(email, orderid, username, sdt, address, proxy, password, api, address_2)
         if success:
             remove_line("username.txt", i)
             remove_line("sdt.txt", i)
@@ -682,7 +705,7 @@ def register_and_cleanup(i, email, orderid, username, sdt, address, proxy, passw
 
 
 
-def worker(index, proxy, username, sdt, address, password, shopgmail_api):
+def worker(index, proxy, username, sdt, address, password, shopgmail_api, address_2):
     try:
         threading.current_thread().name = f"{index + 1}"
 
@@ -697,7 +720,7 @@ def worker(index, proxy, username, sdt, address, password, shopgmail_api):
                 time.sleep(random.uniform(1, 3))
 
         # Gọi hàm xử lý
-        register_and_cleanup(index, email, orderid, username, sdt, address, proxy, password, shopgmail_api)
+        register_and_cleanup(index, email, orderid, username, sdt, address, proxy, password, shopgmail_api, address_2)
 
     except Exception as e:
         logger.error(f"Lỗi ở luồng {index}: {e}")
@@ -772,7 +795,9 @@ def main():
             if stop_event.is_set():
                 break
             proxy = proxies[i % len(proxies)].strip() if proxies else ""
-            task_queue.put((worker, (i, proxy, usernames[i], sdts[i], addresses[i], passwords[i], shopgmail_api)))
+            # random address_2 != i
+            address_2 = addresses[i + 1] if i + 1 < len(addresses) else addresses[0]
+            task_queue.put((worker, (i, proxy, usernames[i], sdts[i], addresses[i], passwords[i], shopgmail_api, address_2)))
             time.sleep(1)
 
         while not task_queue.empty() and not stop_event.is_set():
