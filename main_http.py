@@ -180,13 +180,14 @@ def handle_captcha(driver, email):
 
 # Hàm mô phỏng gõ giống con người
 def human_type(element, text):
+    time.sleep(3)
     for i, char in enumerate(text):  # ✅ SỬA chỗ này
         element.send_keys(char)
         if i % random.randint(3, 7) == 0:
             time.sleep(random.uniform(0.5, 1.0))  # Nghỉ lâu hơn
         else:
             time.sleep(random.uniform(0.2, 0.4))  # Gõ chậm hơn bình thường
-    time.sleep(random.uniform(2, 3))
+    time.sleep(3)
 
 # Hàm đọc dòng từ tệp
 def read_file(file_path):
@@ -430,7 +431,28 @@ def register_amazon(email, orderid, username, sdt, address, proxy, password, sho
                         create_account_button = wait.until(EC.presence_of_element_located((By.ID, "createAccountSubmit")))
                         click_element(driver, create_account_button)
                         time.sleep(10)
-                    
+                    elif "goodreads.com/" in start_link:
+                        # select a element with text "Continue with Amazon"
+                        time.sleep(10)
+                        try: 
+                            amazon_link = driver.find_element(By.XPATH, "//a[contains(text(), 'Continue with Amazon')]")
+                            click_element(driver, amazon_link)
+                        except:
+                            driver.get("https://na.account.amazon.com/ap/signin?_encoding=UTF8&openid.mode=checkid_setup&openid.ns=http%3A%2F%2Fspecs.openid.net%2Fauth%2F2.0&openid.claimed_id=http%3A%2F%2Fspecs.openid.net%2Fauth%2F2.0%2Fidentifier_select&openid.pape.max_auth_age=0&ie=UTF8&openid.ns.pape=http%3A%2F%2Fspecs.openid.net%2Fextensions%2Fpape%2F1.0&openid.identity=http%3A%2F%2Fspecs.openid.net%2Fauth%2F2.0%2Fidentifier_select&pageId=lwa&openid.assoc_handle=amzn_lwa_na&marketPlaceId=ATVPDKIKX0DER&arb=75be9783-95cd-4d76-932c-44d8612b4a65&language=en_US&openid.return_to=https%3A%2F%2Fna.account.amazon.com%2Fap%2Foa%3FmarketPlaceId%3DATVPDKIKX0DER%26arb%3D75be9783-95cd-4d76-932c-44d8612b4a65%26language%3Den_US&enableGlobalAccountCreation=1&metricIdentifier=amzn1.application.7ff8a2be5dae490b9914b4f430ca5c4c&signedMetricIdentifier=pjdsmDnaXhj%2FNbw9hCvWIQvTgX0htu%2BjAbCBVOtDWHM%3D")
+                            time.sleep(10)
+                    elif "luna.amazon.com/" in start_link:
+                        try: 
+                            time.sleep(10)
+                            #id="menu"
+                            menu_button = driver.find_element(By.ID, "menu")
+                            click_element(driver, menu_button)
+                            time.sleep(10)
+                            sign_in_button = driver.find_element(By.ID, "item_global_overlay_sign_in_button")
+                            click_element(driver, sign_in_button)
+                        except:
+                            driver.get("https://www.amazon.com/ap/signin?openid.pape.max_auth_age=3600&openid.return_to=https%3A%2F%2Fluna.amazon.com%2F&openid.identity=http%3A%2F%2Fspecs.openid.net%2Fauth%2F2.0%2Fidentifier_select&openid.assoc_handle=tempo_us&openid.mode=checkid_setup&language=en_US&openid.claimed_id=http%3A%2F%2Fspecs.openid.net%2Fauth%2F2.0%2Fidentifier_select&openid.ns=http%3A%2F%2Fspecs.openid.net%2Fauth%2F2.0")
+                        time.sleep(10)
+
                     # Chọn Tạo tài khoản
                     create_account_button = wait.until(EC.presence_of_element_located((By.ID, "register_accordion_header")))
                     click_element(driver, create_account_button)
@@ -638,8 +660,8 @@ def register_amazon(email, orderid, username, sdt, address, proxy, password, sho
             driver.get(getattr(config, "amazon_add_link","https://www.amazon.com/a/addresses/add?ref=ya_address_book_add_button"))
             time.sleep(10)
             try:
-                address_field = driver.find_element(By.ID, "address-ui-widgets-enterAddressFullName")
-                human_type(address_field, username)
+                # address_field = driver.find_element(By.ID, "address-ui-widgets-enterAddressFullName")
+                # human_type(address_field, username)
                 
                 phone_field = driver.find_element(By.ID, "address-ui-widgets-enterAddressPhoneNumber")
                 human_type(phone_field, sdt)
@@ -651,6 +673,7 @@ def register_amazon(email, orderid, username, sdt, address, proxy, password, sho
                     driver.find_element(By.ID, "address-ui-widgets-enterAddressLine2").send_keys(address_lines[1])
                 # submit form address-ui-address-form
                 formConfirm =  WebDriverWait(driver, 10).until(EC.presence_of_element_located((By.ID, "address-ui-address-form")))
+                time.sleep(5)
                 formConfirm.submit()
             except Exception as e:
                 logger.error(f"CẢNH BÁO: Thêm địa chỉ 2 thất bại cho {email}: {str(e)}")
@@ -658,25 +681,28 @@ def register_amazon(email, orderid, username, sdt, address, proxy, password, sho
         # # Lưu tài khoản thành công
         save_account(email, password, backup_code)
         logger.info(f" Đăng ký thành công {email}. Thực hiện click logo.")
-        try:
-                logo = driver.find_element(By.ID, "nav-logo")
-                click_element(driver, logo)
-        except:
-                driver.get("https://www.amazon.com/ref=navm_hdr_logo")
         time.sleep(5)
-        item_selects = driver.find_elements(By.CSS_SELECTOR, '#desktop-grid-2 .a-link-normal')
-        if len(item_selects) == 0:
-                item_selects = driver.find_elements(By.CSS_SELECTOR, '[role="listitem"]')
-        if len(item_selects) > 3:
-                click_element(driver, item_selects[3])
-        elif len(item_selects) > 2:
-                click_element(driver, item_selects[2])
-        elif len(item_selects) > 1:
-                click_element(driver, item_selects[1])
-        elif len(item_selects) > 0:
-                click_element(driver, item_selects[0])
-        else:
-                driver.get("https://www.amazon.com/b/?ie=UTF8&node=19277531011&ref_=af_gw_quadtopcard_f_july_xcat_cml_1&pd_rd_w=Z5OwE&content-id=amzn1.sym.28c8c8b7-487d-484e-96c7-4d7d067b06ed&pf_rd_p=28c8c8b7-487d-484e-96c7-4d7d067b06ed&pf_rd_r=J2YGJMS1OWWSAF1TRRA8&pd_rd_wg=RP51i&pd_rd_r=10053101-20a0-4a52-9465-faf1daa6535e")
+        try:
+
+            logo_btn = driver.find_element(By.ID, "nav-hamburger-menu")
+            click_element(driver, logo_btn)
+            time.sleep(5)
+            driver.get("https://www.amazon.com/gp/bestsellers/?ref_=navm_em_bestsellers_0_1_1_2")
+            time.sleep(5)
+            links = driver.find_elements(By.CSS_SELECTOR, "a.a-link-normal")
+            if  len(links) > 0:
+                random_link = random.choice(links)
+                click_element(driver, random_link)
+                time.sleep(5)
+        except:
+            item_links = [
+                "https://www.amazon.com/Apple-Watch-Smartwatch-Aluminium-Always/dp/B0DGHYQ1VJ/?_encoding=UTF8&pd_rd_w=gViXc&content-id=amzn1.sym.02c48fa8-77b5-43b1-a427-0e394a81ad6b&pf_rd_p=02c48fa8-77b5-43b1-a427-0e394a81ad6b&pf_rd_r=WYNAXN2EN0FSFQ5NMG5Q&pd_rd_wg=XGLOm&pd_rd_r=4dc5a927-687b-40a2-b897-973ca886547b&ref_=pd_hp_mw_atf_dealz_newnote_rtpb",
+                "https://www.amazon.com/LEGO-Brick-Backpack-Flame-Orange/dp/B0CZPQN66H/?_encoding=UTF8&pd_rd_w=gViXc&content-id=amzn1.sym.02c48fa8-77b5-43b1-a427-0e394a81ad6b&pf_rd_p=02c48fa8-77b5-43b1-a427-0e394a81ad6b&pf_rd_r=WYNAXN2EN0FSFQ5NMG5Q&pd_rd_wg=XGLOm&pd_rd_r=4dc5a927-687b-40a2-b897-973ca886547b&ref_=pd_hp_mw_atf_dealz_newnote_rtpb",
+                "https://www.amazon.com/Touchland-Hydrating-Sanitizer-Watermelon-500-Sprays/dp/B09YSW2KQF/?_encoding=UTF8&pd_rd_w=gViXc&content-id=amzn1.sym.02c48fa8-77b5-43b1-a427-0e394a81ad6b&pf_rd_p=02c48fa8-77b5-43b1-a427-0e394a81ad6b&pf_rd_r=WYNAXN2EN0FSFQ5NMG5Q&pd_rd_wg=XGLOm&pd_rd_r=4dc5a927-687b-40a2-b897-973ca886547b&ref_=pd_hp_mw_atf_dealz_newnote_rtpb",
+                "https://www.amazon.com/LEGO-Kids-Brick-Backpack-Green/dp/B079FDZCFX/?_encoding=UTF8&pd_rd_w=gViXc&content-id=amzn1.sym.02c48fa8-77b5-43b1-a427-0e394a81ad6b&pf_rd_p=02c48fa8-77b5-43b1-a427-0e394a81ad6b&pf_rd_r=WYNAXN2EN0FSFQ5NMG5Q&pd_rd_wg=XGLOm&pd_rd_r=4dc5a927-687b-40a2-b897-973ca886547b&ref_=pd_hp_mw_atf_dealz_newnote_rtpb"
+            ]
+            random_item = random.choice(item_links)
+            driver.get(random_item)
         time.sleep(15)
         return True
     except Exception as e:
