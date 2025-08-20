@@ -241,20 +241,17 @@ def log_failed_account(email, file_path):
 
 def click_element(driver, element, timeout=10):
     try:
-        time.sleep(3)
-        # Scroll element vào giữa màn hình
         driver.execute_script("arguments[0].scrollIntoView({block: 'center'});", element)
-        # Click bằng JS
-        driver.execute_script("arguments[0].click();", element)
-    except TimeoutException:
-        logger.error("Timeout chờ element có thể click")
-    except Exception as ex:
+        # Dùng native click trước
+        element.click()
+    except Exception as ex1:
+        logger.error(f"Lỗi click native: {repr(ex1)}")
         try:
-            element.click()
-        except Exception as e:
-            logger.error(f"Lỗi khi click element: {repr(e)}")
-            logger.debug(f"Chi tiết lỗi: {traceback.format_exc()}")
-            raise ex
+            # Nếu native fail thì fallback sang JS
+            driver.execute_script("arguments[0].click();", element)
+        except Exception as ex2:
+            logger.error(f"Lỗi click JS fallback: {repr(ex2)}")
+            raise
     
 def get_2fa_code(secret_key):
     try:
