@@ -259,26 +259,26 @@ def click_element(driver, element, timeout=10):
                 el.dispatchEvent(evt);
             });
         """, element)
+    def click_js():
+        try:
+            driver.execute_script("arguments[0].click();", element)
+        except Exception as ex:
+            pass
     time.sleep(3)
     try:
         # Đợi clickable
         WebDriverWait(driver, timeout).until(EC.element_to_be_clickable(element))
         driver.execute_script("arguments[0].scrollIntoView({block: 'center'});", element)
         patched_click()
-        
         return True
-
     except Exception as ex1:
-        logger.warning(f"Native click fail: {repr(ex1)} -> thử ActionChains")
         try:
             ActionChains(driver).move_to_element(element).pause(0.1).click().perform()
             return True
-        except Exception as ex2:
-            logger.warning(f"ActionChains fail: {repr(ex2)} -> thử patched click")
-            raise
+        except:
+            click_js()
     finally:
         time.sleep(3)
-
 
 def focus_input(driver, element):
     try:

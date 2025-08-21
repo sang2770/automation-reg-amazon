@@ -238,18 +238,54 @@ def log_failed_account(email, file_path):
         logger.info(f"Tài khoản {email} đã có trong {file_path}, không ghi lại")
 
 def click_element(driver, element, timeout=10):
+    def patched_click():
+        driver.execute_script("""
+            const el = arguments[0];
+            const rect = el.getBoundingClientRect();
+            const x = rect.left + rect.width/2;
+            const y = rect.top + rect.height/2;
+
+            ['mouseover','mousemove','mousedown','mouseup','click'].forEach(type => {
+                const evt = new MouseEvent(type, {
+                    bubbles: true,
+                    cancelable: true,
+                    view: window,
+                    clientX: x,
+                    clientY: y,
+                    button: 0
+                });
+                el.dispatchEvent(evt);
+            });
+        """, element)
+    def click_js():
+        try:
+            driver.execute_script("arguments[0].click();", element)
+        except Exception as ex:
+            pass
+    time.sleep(3)
+    try:
+        # Đợi clickable
+        WebDriverWait(driver, timeout).until(EC.element_to_be_clickable(element))
+        driver.execute_script("arguments[0].scrollIntoView({block: 'center'});", element)
+        patched_click()
+        return True
+    except Exception as ex1:
+        try:
+            ActionChains(driver).move_to_element(element).pause(0.1).click().perform()
+            return True
+        except:
+            click_js()
+    finally:
+        time.sleep(3)
+
+def focus_input(driver, element):
     try:
         driver.execute_script("arguments[0].scrollIntoView({block: 'center'});", element)
-        # Dùng native click trước
-        element.click()
-    except Exception as ex1:
-        logger.error(f"Lỗi click native: {repr(ex1)}")
-        try:
-            # Nếu native fail thì fallback sang JS
-            driver.execute_script("arguments[0].click();", element)
-        except Exception as ex2:
-            logger.error(f"Lỗi click JS fallback: {repr(ex2)}")
-            raise
+        driver.execute_script("arguments[0].focus();", element)
+        return True
+    except Exception as ex:
+        logger.error(f"Focus input fail: {repr(ex)}")
+        return False
 
 def get_2fa_code(secret_key):
     try:
@@ -454,13 +490,11 @@ def register_amazon(email, orderid, username, proxy, password, shopgmail_api):
                     click_element(driver, create_account_button)
                     # Điền biểu mẫu đăng ký
                     name_field = wait.until(EC.presence_of_element_located((By.ID, "ap_customer_name")))
-                    click_element(driver, name_field)
-                    time.sleep(3)
+                    focus_input(driver, name_field)
                     human_type(name_field, username)
                     
                     email_field = driver.find_element(By.ID, "ap_email")
-                    click_element(driver, email_field)
-                    time.sleep(3)
+                    focus_input(driver, email_field)
                     human_type(email_field, email)
                     
                     # password = ''.join(random.choices(string.ascii_letters + string.digits, k=12))
