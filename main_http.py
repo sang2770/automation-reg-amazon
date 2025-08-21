@@ -33,6 +33,14 @@ def read_config(file_path):
     except FileNotFoundError:
         logger.warning(f"CẢNH BÁO: Không tìm thấy tệp {file_path}. Chạy mà không dùng dữ liệu từ tệp.")
         return {}
+    
+def read_link_sp():
+    try:
+        with open("link san pham.txt", 'r', encoding='utf-8') as f:
+            return [line.strip() for line in f if line.strip()]
+    except FileNotFoundError:
+        logger.warning("CẢNH BÁO: Không tìm thấy tệp link san pham.txt. Chạy mà không dùng dữ liệu từ tệp.")
+        return []
 
 config = read_config("config.json")
 
@@ -76,7 +84,7 @@ class GemLoginAPI:
         response = self.session.get(f"{self.base_url}/api/profiles/start/{profile_id}")
         if response.status_code == 200 and response.json().get("success"):
             return response.json().get("data", {})
-        logger.error(f"CẢNH BÁO: Không khởi động được cấu hình {profile_id}")
+        logger.error(f"CẢNH BÁO: Không khởi động được cấu hình {profile_id} {response.json().get('message')}")
         failed_start_profile_count += 1
         if (failed_start_profile_count >= 10):
             stop_event.set()
@@ -239,47 +247,20 @@ def log_failed_account(email, file_path):
     elif "captcha.txt" not in file_path:
         logger.info(f" Tài khoản {email} đã có trong {file_path}, không ghi lại")
 
+
 def click_element(driver, element, timeout=10):
-    def patched_click():
-        driver.execute_script("""
-            const el = arguments[0];
-            const rect = el.getBoundingClientRect();
-            const x = rect.left + rect.width/2;
-            const y = rect.top + rect.height/2;
-
-            ['mouseover','mousemove','mousedown','mouseup','click'].forEach(type => {
-                const evt = new MouseEvent(type, {
-                    bubbles: true,
-                    cancelable: true,
-                    view: window,
-                    clientX: x,
-                    clientY: y,
-                    button: 0
-                });
-                el.dispatchEvent(evt);
-            });
-        """, element)
-    def click_js():
-        try:
-            driver.execute_script("arguments[0].click();", element)
-        except Exception as ex:
-            pass
-    time.sleep(3)
     try:
-        # Đợi clickable
-        WebDriverWait(driver, timeout).until(EC.element_to_be_clickable(element))
-        driver.execute_script("arguments[0].scrollIntoView({block: 'center'});", element)
-        patched_click()
-        return True
-    except Exception as ex1:
-        try:
-            ActionChains(driver).move_to_element(element).pause(0.1).click().perform()
-            return True
-        except:
-            click_js()
-    finally:
         time.sleep(3)
-
+        # Scroll element vào giữa màn hình
+        driver.execute_script("arguments[0].scrollIntoView({block: 'center'});", element)
+        # Click bằng JS
+        driver.execute_script("arguments[0].click();", element)
+    except Exception as ex:
+        try:
+            element.click()
+        except Exception as e:
+            raise ex
+        
 def focus_input(driver, element):
     try:
         driver.execute_script("arguments[0].scrollIntoView({block: 'center'});", element)
@@ -559,7 +540,21 @@ def register_amazon(email, orderid, username, sdt, address, proxy, password, sho
             return False
         
         # Điều hướng đến thiết lập 2FA
-        driver.get(getattr(config, "2fa_amazon_link", "https://www.amazon.com/ax/account/manage?openid.return_to=https%3A%2F%2Fwww.amazon.com%2Fyour-account%3Fref_%3Dya_cnep&openid.assoc_handle=anywhere_v2_us&shouldShowPasskeyLink=true&passkeyEligibilityArb=23254432-b9cb-4b93-98b6-ba9ed5e45a65&passkeyMetricsActionId=07975eeb-087d-42ab-971d-66c2807fe4f5"))
+
+        link_sps = read_link_sp()
+        if len(link_sps) > 0:
+            driver.get(link_sps[0])
+            time.sleep(10)
+            driver.refresh()
+            time.sleep(5)
+            navbar = driver.find_element(By.ID, "nav-button-avatar")
+            click_element(driver, navbar)
+            time.sleep(5)
+            driver.get("https://www.amazon.com/gp/css/homepage.html?ref_=navm_accountmenu_account")
+            time.sleep(5)
+            driver.get("https://www.amazon.com/ax/account/manage?openid.return_to=https%3A%2F%2Fwww.amazon.com%2Fyour-account%3Fref_%3Dya_cnep&openid.assoc_handle=anywhere_v2_us&shouldShowPasskeyLink=true&passkeyEligibilityArb=bff7d240-f0cc-4761-8a00-01e3b4706c73&passkeyMetricsActionId=9caabe30-52d4-4571-8498-c8c2830ed77b")
+        else:
+            driver.get(getattr(config, "2fa_amazon_link", "https://www.amazon.com/ax/account/manage?openid.return_to=https%3A%2F%2Fwww.amazon.com%2Fyour-account%3Fref_%3Dya_cnep&openid.assoc_handle=anywhere_v2_us&shouldShowPasskeyLink=true&passkeyEligibilityArb=23254432-b9cb-4b93-98b6-ba9ed5e45a65&passkeyMetricsActionId=07975eeb-087d-42ab-971d-66c2807fe4f5"))
         time.sleep(10)
         if "www.amazon.com/ax/account/manage" not in driver.current_url and "amazon.com/ap/signin" in driver.current_url:
             login_success, error_reason = check_login(driver, email, password)
@@ -631,7 +626,7 @@ def register_amazon(email, orderid, username, sdt, address, proxy, password, sho
         human_type(otp_field_2fa, otp_2fa)
         formConfirm =  wait.until(EC.presence_of_element_located((By.ID, "sia-add-auth-app-form")))
         formConfirm.submit()
-        time.sleep(10)
+        time.sleep(5)
         
         # Kiểm tra CAPTCHA lần nữa
         if not handle_captcha(driver, email):
@@ -646,69 +641,76 @@ def register_amazon(email, orderid, username, sdt, address, proxy, password, sho
     
         input_otp()
         
-        # Điều hướng đến sổ địa chỉ
-        driver.get(getattr(config, "amazon_add_link","https://www.amazon.com/a/addresses"))
+        time.sleep(5)
+        driver.get("https://www.amazon.com/ax/account/manage")
         time.sleep(10)
+        navbar = driver.find_element(By.ID, "nav-button-avatar")
+        click_element(driver, navbar)
+        time.sleep(5)
+        driver.get("https://www.amazon.com/gp/css/homepage.html?ref_=navm_accountmenu_account")
+        time.sleep(5)
+        driver.get("https://www.amazon.com/cpe/yourpayments/settings/manageoneclick")
+        time.sleep(5)
+        add_btn = driver.find_element(By.CSS_SELECTOR, '[name="ppw-widgetEvent:AddOneClickEvent:{}"]')
         try:
-            pickup_address = driver.find_element(By.ID, "ya-myab-store-address-add-link-mobile")
-            click_element(driver, pickup_address)
-            time.sleep(10)
-        except:
-            driver.get("https://www.amazon.com/location_selector?useCustomerContext=1&clientId=amazon_us_add_to_addressbook_mobile&countryCode=US&ref=ab_accessPoint_search_mobile")
-            time.sleep(10)
-        # Thêm địa chỉ
-        driver.refresh()
-        time.sleep(15)
-        try:
-            # Tìm tất cả input có type="search"
-            target_input = driver.find_element(By.CSS_SELECTOR, 'input[type="search"]')
-            logger.info(f" Đã tìm thấy input địa chỉ")
-            click_element(driver, target_input)
-            time.sleep(2)
-            human_type(target_input, address)
-            time.sleep(10)
-            address_links = driver.find_elements(By.CSS_SELECTOR, ".a-spacing-mini.a-link-normal")
-            if address_links:
-                    click_element(driver, address_links[0])
-                    time.sleep(3)
+            if add_btn:
+                click_element(driver, add_btn)
+                time.sleep(5)
+                add_name, city, state, zipcode = address.split("|")
+
+                full_name_field = driver.find_element(By.CSS_SELECTOR, '[name="ppw-fullName"]')
+                focus_input(driver, full_name_field)
+                human_type(full_name_field, username)
+
+                address_field = driver.find_element(By.CSS_SELECTOR, '[name="ppw-line1"]')
+                focus_input(driver, address_field)
+                human_type(address_field, add_name)
+
+                city_field = driver.find_element(By.CSS_SELECTOR, '[name="ppw-city"]')
+                focus_input(driver, city_field)
+                human_type(city_field, city)
+
+                state_field = driver.find_element(By.CSS_SELECTOR, '[name="ppw-stateOrRegion"]')
+                focus_input(driver, state_field)
+                human_type(state_field, state)
+
+                zipcode_field = driver.find_element(By.CSS_SELECTOR, '[name="ppw-postalCode"]')
+                focus_input(driver, zipcode_field)
+                human_type(zipcode_field, zipcode)
+
+                phone_field = driver.find_element(By.CSS_SELECTOR, '[name="ppw-phoneNumber"]')
+                focus_input(driver, phone_field)
+                human_type(phone_field, sdt)
+
+                def submit_add():
+                    try:
+                        continue_btn = driver.find_element(By.CSS_SELECTOR, '[name="ppw-widgetEvent:AddAddressEvent"]')
+                        click_element(driver, continue_btn)
+                    except:
+                        form = driver.find_element(By.CSS_SELECTOR, "form.pmts-portal-component")
+                        form.submit()
+                    time.sleep(5)
+
+                
+                submit_add()
+                time.sleep(10)
+                check_error = driver.find_elements(By.CSS_SELECTOR, "h4.a-alert-heading")
+                found_error = False
+                for el in check_error:
+                    if el.text.strip() == "There was a problem.":
+                        found_error = True
+                        break
+                if found_error:
+                    submit_add()
+                    time.sleep(10)
             else:
-                    raise Exception("No address links found.")
-            btn_add = driver.find_element(By.CSS_SELECTOR, "[value='Add to address book']")
-            click_element(driver, btn_add)
-            time.sleep(10)
-            
-            # Kiểm tra CAPTCHA lần nữa
-            if not handle_captcha(driver, email):
-                log_failed_account(email, "captcha.txt")
+                logger.error(f"CẢNH BÁO: Không tìm thấy nút thêm địa chỉ thanh toán cho {email}")
+                log_failed_account(email, "chua_add.txt")
                 return False
         except Exception as e:
-            logger.error(f"CẢNH BÁO: Thêm địa chỉ thất bại cho {email}: {str(e)}")
-            log_failed_account(email + "|" + password + "|" + backup_code, "chua_add.txt")
+            log_failed_account(email, "chua_add.txt")
             return False
-        
-        # add address2
-        if address_2:
-            driver.get(getattr(config, "amazon_add_link","https://www.amazon.com/a/addresses/add?ref=ya_address_book_add_button"))
-            time.sleep(10)
-            try:
-                # address_field = driver.find_element(By.ID, "address-ui-widgets-enterAddressFullName")
-                # human_type(address_field, username)
-                
-                phone_field = driver.find_element(By.ID, "address-ui-widgets-enterAddressPhoneNumber")
-                human_type(phone_field, sdt)
-                
-                address_lines = address.split(", ")
-                human_type(driver.find_element(By.ID, "address-ui-widgets-enterAddressLine1"), address_lines[0])
-                select_autocomplete(driver)
-                if len(address_lines) > 1:
-                    driver.find_element(By.ID, "address-ui-widgets-enterAddressLine2").send_keys(address_lines[1])
-                # submit form address-ui-address-form
-                formConfirm =  WebDriverWait(driver, 10).until(EC.presence_of_element_located((By.ID, "address-ui-address-form")))
-                time.sleep(5)
-                formConfirm.submit()
-            except Exception as e:
-                logger.error(f"CẢNH BÁO: Thêm địa chỉ 2 thất bại cho {email}: {str(e)}")
-                log_failed_account(email + "|" + password + "|" + backup_code, "chua_add.txt")
+
         # # Lưu tài khoản thành công
         save_account(email, password, backup_code)
         logger.info(f" Đăng ký thành công {email}. Thực hiện click logo.")

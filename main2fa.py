@@ -32,6 +32,13 @@ def read_config(file_path):
     except FileNotFoundError:
         logger.warning(f"CẢNH BÁO: Không tìm thấy tệp {file_path}. Chạy mà không dùng dữ liệu từ tệp.")
         return {}
+def read_link_sp():
+    try:
+        with open("link san pham.txt", 'r', encoding='utf-8') as f:
+            return [line.strip() for line in f if line.strip()]
+    except FileNotFoundError:
+        logger.warning("CẢNH BÁO: Không tìm thấy tệp link san pham.txt. Chạy mà không dùng dữ liệu từ tệp.")
+        return []
 
 config = read_config("config.json")
 
@@ -238,45 +245,17 @@ def log_failed_account(email, file_path):
         logger.info(f"Tài khoản {email} đã có trong {file_path}, không ghi lại")
 
 def click_element(driver, element, timeout=10):
-    def patched_click():
-        driver.execute_script("""
-            const el = arguments[0];
-            const rect = el.getBoundingClientRect();
-            const x = rect.left + rect.width/2;
-            const y = rect.top + rect.height/2;
-
-            ['mouseover','mousemove','mousedown','mouseup','click'].forEach(type => {
-                const evt = new MouseEvent(type, {
-                    bubbles: true,
-                    cancelable: true,
-                    view: window,
-                    clientX: x,
-                    clientY: y,
-                    button: 0
-                });
-                el.dispatchEvent(evt);
-            });
-        """, element)
-    def click_js():
-        try:
-            driver.execute_script("arguments[0].click();", element)
-        except Exception as ex:
-            pass
-    time.sleep(3)
     try:
-        # Đợi clickable
-        WebDriverWait(driver, timeout).until(EC.element_to_be_clickable(element))
-        driver.execute_script("arguments[0].scrollIntoView({block: 'center'});", element)
-        patched_click()
-        return True
-    except Exception as ex1:
-        try:
-            ActionChains(driver).move_to_element(element).pause(0.1).click().perform()
-            return True
-        except:
-            click_js()
-    finally:
         time.sleep(3)
+        # Scroll element vào giữa màn hình
+        driver.execute_script("arguments[0].scrollIntoView({block: 'center'});", element)
+        # Click bằng JS
+        driver.execute_script("arguments[0].click();", element)
+    except Exception as ex:
+        try:
+            element.click()
+        except Exception as e:
+            raise ex
 
 def focus_input(driver, element):
     try:
@@ -559,7 +538,23 @@ def register_amazon(email, orderid, username, proxy, password, shopgmail_api):
             return False
         
         # Điều hướng đến thiết lập 2FA
-        driver.get(getattr(config, "2fa_amazon_link", "https://www.amazon.com/ax/account/manage?openid.return_to=https%3A%2F%2Fwww.amazon.com%2Fyour-account%3Fref_%3Dya_cnep&openid.assoc_handle=anywhere_v2_us&shouldShowPasskeyLink=true&passkeyEligibilityArb=23254432-b9cb-4b93-98b6-ba9ed5e45a65&passkeyMetricsActionId=07975eeb-087d-42ab-971d-66c2807fe4f5"))
+         # Điều hướng đến thiết lập 2FA
+
+        link_sps = read_link_sp()
+        if len(link_sps) > 0:
+            driver.get(link_sps[0])
+            time.sleep(10)
+            driver.refresh()
+            time.sleep(5)
+            navbar = driver.find_element(By.ID, "nav-button-avatar")
+            click_element(driver, navbar)
+            time.sleep(5)
+            driver.get("https://www.amazon.com/gp/css/homepage.html?ref_=navm_accountmenu_account")
+            time.sleep(5)
+            driver.get("https://www.amazon.com/ax/account/manage?openid.return_to=https%3A%2F%2Fwww.amazon.com%2Fyour-account%3Fref_%3Dya_cnep&openid.assoc_handle=anywhere_v2_us&shouldShowPasskeyLink=true&passkeyEligibilityArb=bff7d240-f0cc-4761-8a00-01e3b4706c73&passkeyMetricsActionId=9caabe30-52d4-4571-8498-c8c2830ed77b")
+        else:
+            driver.get(getattr(config, "2fa_amazon_link", "https://www.amazon.com/ax/account/manage?openid.return_to=https%3A%2F%2Fwww.amazon.com%2Fyour-account%3Fref_%3Dya_cnep&openid.assoc_handle=anywhere_v2_us&shouldShowPasskeyLink=true&passkeyEligibilityArb=23254432-b9cb-4b93-98b6-ba9ed5e45a65&passkeyMetricsActionId=07975eeb-087d-42ab-971d-66c2807fe4f5"))
+
         time.sleep(10)
         if "www.amazon.com/ax/account/manage" not in driver.current_url and "amazon.com/ap/signin" in driver.current_url:
             login_success, error_reason = check_login(driver, email, password)
