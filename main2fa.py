@@ -542,7 +542,7 @@ def register_amazon(email, orderid, username, proxy, password, shopgmail_api):
 
         link_sps = read_link_sp()
         if len(link_sps) > 0:
-            driver.get(link_sps[0])
+            driver.get(random.choice(link_sps))
             time.sleep(10)
             driver.refresh()
             time.sleep(5)
