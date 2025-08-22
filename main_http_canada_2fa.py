@@ -594,7 +594,6 @@ def register_amazon(email, orderid, username, sdt, address, proxy, password, sho
         driver.refresh()
         time.sleep(15)
         # Kích hoạt 2FA
-
         turn_on_2fa = driver.find_element(By.ID, "TWO_STEP_VERIFICATION_BUTTON")
         try: 
             turn_on_2fa.click()
@@ -662,85 +661,6 @@ def register_amazon(email, orderid, username, sdt, address, proxy, password, sho
         input_otp()
         
         time.sleep(5)
-        driver.get("https://www.amazon.ca/ax/account/manage")
-        time.sleep(10)
-        navbar = driver.find_element(By.ID, "nav-button-avatar")
-        click_element(driver, navbar)
-        time.sleep(5)
-        driver.get("https://www.amazon.ca/gp/css/homepage.html?ref_=navm_accountmenu_account")
-        time.sleep(5)
-        driver.get("https://www.amazon.ca/cpe/yourpayments/settings/manageoneclick")
-        time.sleep(5)
-        add_btn = driver.find_element(By.CSS_SELECTOR, '[name="ppw-widgetEvent:AddOneClickEvent:{}"]')
-        try:
-            if add_btn:
-                click_element(driver, add_btn)
-                time.sleep(5)
-                add_name, city, state, zipcode = address.split("|")
-
-                full_name_field = driver.find_element(By.CSS_SELECTOR, '[name="ppw-fullName"]')
-                focus_input(driver, full_name_field)
-                human_type(full_name_field, username)
-
-                address_field = driver.find_element(By.CSS_SELECTOR, '[name="ppw-line1"]')
-                focus_input(driver, address_field)
-                human_type(address_field, add_name)
-
-                city_field = driver.find_element(By.CSS_SELECTOR, '[name="ppw-city"]')
-                focus_input(driver, city_field)
-                human_type(city_field, city)
-
-                state_field = driver.find_element(By.CSS_SELECTOR, '[name="ppw-stateOrRegion"]')
-                focus_input(driver, state_field)
-                human_type(state_field, state)
-
-                zipcode_field = driver.find_element(By.CSS_SELECTOR, '[name="ppw-postalCode"]')
-                focus_input(driver, zipcode_field)
-                human_type(zipcode_field, zipcode)
-
-                phone_field = driver.find_element(By.CSS_SELECTOR, '[name="ppw-phoneNumber"]')
-                focus_input(driver, phone_field)
-                human_type(phone_field, sdt)
-
-                time.sleep(3)
-                try:
-                    label = driver.find_element(By.CSS_SELECTOR, ".a-dropdown-prompt")
-                    select_element = driver.find_element(By.NAME, "ppw-countryCode")
-                    driver.execute_script("arguments[0].innerText = 'United States';", label)
-                    driver.execute_script("arguments[0].value = 'US';", select_element)
-                except Exception as e:
-                    pass
-                finally:
-                    time.sleep(3)
-
-                def submit_add():
-                    try:
-                        continue_btn = driver.find_element(By.CSS_SELECTOR, '[name="ppw-widgetEvent:AddAddressEvent"]')
-                        click_element(driver, continue_btn)
-                    except:
-                        form = driver.find_element(By.CSS_SELECTOR, "form.pmts-portal-component")
-                        form.submit()
-                    time.sleep(5)
-
-                
-                submit_add()
-                time.sleep(10)
-                check_error = driver.find_elements(By.CSS_SELECTOR, "h4.a-alert-heading")
-                found_error = False
-                for el in check_error:
-                    if el.text.strip() == "There was a problem.":
-                        found_error = True
-                        break
-                if found_error:
-                    submit_add()
-                    time.sleep(10)
-            else:
-                logger.error(f"CẢNH BÁO: Không tìm thấy nút thêm địa chỉ thanh toán cho {email}")
-                log_failed_account(email, "chua_add.txt")
-                return False
-        except Exception as e:
-            log_failed_account(email, "chua_add.txt")
-            return False
 
         # # Lưu tài khoản thành công
         save_account(email, password, backup_code)
