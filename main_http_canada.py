@@ -24,7 +24,33 @@ import os
 
 service = Service(ChromeDriverManager(driver_version="137.0.7151.122").install())
 stop_event = threading.Event()
+pause_event = threading.Event()
 failed_start_profile_count = 0
+failed_account_creation_count = 0
+max_failed_account_creation = 0
+account_creation_lock = threading.Lock()
+def increment_failed_account_creation():
+    global failed_account_creation_count, max_failed_account_creation
+    threading.current_thread().name = "Monitor"
+    with account_creation_lock:
+        failed_account_creation_count += 1
+        logger.warning(f"⚠️ Số lỗi tạo tài khoản hiện tại: {failed_account_creation_count}/{max_failed_account_creation}")
+        
+        if failed_account_creation_count >= max_failed_account_creation:
+            logger.warning(f"🛑 Đã đạt tới số lỗi tối đa ({max_failed_account_creation}). Tạm dừng tất cả luồng trong 1 giờ...")
+            pause_event.set()
+            
+            # Tạo thread riêng để chờ 1 giờ và reset
+            def wait_and_resume():
+                time.sleep(3600)  # Chờ 1 giờ (3600 giây)
+                global failed_account_creation_count
+                with account_creation_lock:
+                    failed_account_creation_count = 0
+                    logger.info("✅ Đã chờ đủ 1 giờ. Tiếp tục tạo tài khoản...")
+                    pause_event.clear()
+            
+            threading.Thread(target=wait_and_resume, daemon=True).start()
+
 # Hàm đọc config.json
 def read_config(file_path):
     try:
@@ -532,8 +558,6 @@ def register_amazon(email, orderid, username, sdt, address, proxy, password, sho
                 except Exception:
                     max_retry -= 1
             if max_retry == 0:
-                logger.error(f"CẢNH BÁO: Không tạo được tài khoản cho {email}")
-                log_failed_account(email, "captcha.txt")
                 return False
         
         start_links = read_file("reg_link.txt")
@@ -545,6 +569,7 @@ def register_amazon(email, orderid, username, sdt, address, proxy, password, sho
             time.sleep(random.uniform(1, 3))
         if not check:
             logger.error(f"CẢNH BÁO: Không tạo được tài khoản cho {email}")
+            increment_failed_account_creation()
             log_failed_account(email, "captcha.txt")
             return False
         otp_check = findElement(driver, "input[aria-label='Verify OTP Button']", "#verification-code-form")
@@ -570,6 +595,32 @@ def register_amazon(email, orderid, username, sdt, address, proxy, password, sho
         if not handle_captcha(driver, email):
             log_failed_account(email, "captcha.txt")
             return False
+        time.sleep(5)
+        def check_phone_verification(driver, email):
+            """Check if account is blocked by phone verification and log appropriate message"""
+            try:
+                
+                phone_verification_checks = [
+                    (lambda: find_element_by_text(driver, "h1", "Add mobile number"), "US"),
+                    (lambda: find_element_by_text(driver, "h1", "Add cell number"), "CA"),
+                    (lambda: findElement(driver, "#cvf_phone_number_label", None), "US"),
+                    (lambda: driver.current_url.startswith("https://www.amazon.com/ap/cvf/verify"), "US"),
+                    (lambda: driver.current_url.startswith("https://www.amazon.ca/ap/accountfixup"), "CA")
+                ]
+                for check_func, region in phone_verification_checks:
+                    if check_func():
+                        logger.error(f"CẢNH BÁO: {email} dính sdt {region}")
+                        return False
+                
+                return True
+            except Exception as e:
+                logger.error(f"Lỗi khi kiểm tra phone verification cho {email}: {repr(e)}")
+                return True
+
+        # Replace the selection with:
+        if not check_phone_verification(driver, email):
+            return False
+        
         is_registered = True
         # Điều hướng đến thiết lập 2FA
         time.sleep(5)
@@ -660,8 +711,8 @@ def register_amazon(email, orderid, username, sdt, address, proxy, password, sho
         time.sleep(5)
         driver.get("https://www.amazon.ca/cpe/yourpayments/settings/manageoneclick")
         time.sleep(5)
-        add_btn = driver.find_element(By.CSS_SELECTOR, '[name="ppw-widgetEvent:AddOneClickEvent:{}"]')
         try:
+            add_btn = driver.find_element(By.CSS_SELECTOR, '[name="ppw-widgetEvent:AddOneClickEvent:{}"]')
             if add_btn:
                 click_element(driver, add_btn)
                 time.sleep(5)
@@ -777,15 +828,19 @@ def register_and_cleanup(i, email, orderid, username, sdt, address, proxy, passw
     except Exception as e:
         logger.error(f"Lỗi xử lý tài khoản {i}: {e}")
 
-
+def check_pause():
+    while pause_event.is_set():
+        time.sleep(60)
 
 def worker(index, proxy, username, sdt, address, password, shopgmail_api, address_2):
     try:
         threading.current_thread().name = f"{index + 1}"
-
+        check_pause()
         # Tạo Gmail
         while True:
             try:
+                # Kiểm tra pause event trong quá trình tạo Gmail
+                check_pause()
                 email, orderid = shopgmail_api.create_gmail_account()
                 if email and orderid:
                     break
@@ -811,6 +866,8 @@ def check_stop_key(task_queue):
 def worker_from_queue(task_queue):
     while True:
         try:
+            # Kiểm tra pause event trước khi lấy task mới
+            check_pause()
             task = task_queue.get(timeout=0.5)
         except Empty:
             if stop_event.is_set():
@@ -834,6 +891,8 @@ def main():
     try:
         num_accounts = int(input("🔢 Nhập số tài khoản cần tạo: "))
         max_threads = int(input("⚙️ Nhập số luồng chạy mỗi lần: "))
+        global max_failed_account_creation
+        max_failed_account_creation = int(input("🚫 Nhập số lỗi tối đa trước khi tạm dừng 1 giờ: "))
     except ValueError:
         logger.error("❌ Giá trị nhập vào không hợp lệ. Vui lòng nhập số nguyên.")
         return
@@ -855,6 +914,7 @@ def main():
         return
     max_threads = min(max_threads, min_length)
     logger.info(f"🔧 Sẽ xử lý {min_length} tài khoản với {max_threads} luồng")
+    logger.info(f"🚫 Sẽ tạm dừng 1 giờ khi đạt {max_failed_account_creation} lỗi tạo tài khoản")
     logger.info("💡 Nhấn phím 'x' rồi Enter để dừng việc tạo tài khoản mới, nhưng vẫn để các luồng đang chạy hoàn tất.")
 
     task_queue = Queue()
@@ -868,6 +928,7 @@ def main():
         for i in range(min_length):
             if stop_event.is_set():
                 break
+            check_pause()
             proxy = proxies[i % len(proxies)].strip() if proxies else ""
             # random address_2 != i
             address_2 = addresses[i + 1] if i + 1 < len(addresses) else addresses[0]
