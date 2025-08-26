@@ -144,10 +144,10 @@ class ShopGmailAPI:
                     logger.warning(f"CẢNH BÁO: Lỗi khi tạo Gmail: {data.get('msg')}")
                     return None, None
             else:
-                logger.warning(f"CẢNH BÁO: Lỗi khi gọi API CreateOrder: {response.status_code} - {response.text}.Tiến hành tạo lại..." )
+                # logger.warning(f"CẢNH BÁO: Lỗi khi gọi API CreateOrder: {response.status_code} - {response.text}.Tiến hành tạo lại..." )
                 return None, None
         except Exception as e:
-            logger.warning(f"CẢNH BÁO: Lỗi khi gọi API CreateOrder: {str(e)}. Tiến hành tạo lại...")
+            # logger.warning(f"CẢNH BÁO: Lỗi khi gọi API CreateOrder: {str(e)}. Tiến hành tạo lại...")
             return None, None
 
     def get_otp(self, orderid):
@@ -303,9 +303,16 @@ def select_autocomplete(driver):
     except Exception:
         # Nếu không có autocomplete, tiếp tục
         logger.info(" Không tìm thấy autocomplete, tiếp tục nhập địa chỉ")
-
+def refresh_page(driver):
+    driver.refresh()
+    time.sleep(5)
 def check_login(driver, email, password):
     try:
+        try:
+            skip = driver.find_element(By.ID, "ap-account-fixup-phone-skip-link")       
+            click_element(driver, skip)
+        except:
+            pass
         wait = WebDriverWait(driver, 15)
         # Nhập email
         email_input = wait.until(EC.visibility_of_element_located((By.ID, "ap_email_login")))
@@ -315,30 +322,31 @@ def check_login(driver, email, password):
             form_login.submit() 
         except:
             click_element(driver, driver.find_element(By.ID, "continue-announce"))
-
-        time.sleep(3)
+        refresh_page(driver)
         if "ap/cvf" in driver.current_url or not handle_captcha(driver, email):
             logger.error(f"🚫 CAPTCHA sau email: {email}")
             return False, "CAPTCHA"
 
         # Nhập mật khẩu
-        pwd_input = wait.until(EC.visibility_of_element_located((By.ID, "ap_password")))
-        human_type(pwd_input, password)
+        try:
+            pwd_input = wait.until(EC.visibility_of_element_located((By.ID, "ap_password")))
+            human_type(pwd_input, password)
+        except:
+            return False, "NO PASSWORD INPUT"
         try:
             form_login = driver.find_element(By.CSS_SELECTOR, "form[name='signIn']")
             form_login.submit()
         except: 
             click_element(driver, driver.find_element(By.ID, "signInSubmit"))
-
-        time.sleep(5)
+        refresh_page(driver)
         if "ap/cvf" in driver.current_url or not handle_captcha(driver, email):
             logger.error(f"🚫 CAPTCHA sau mật khẩu: {email}")
             return False, "CAPTCHA"
         return True, None
     except Exception as e:
-        logger.error(f"❗ Lỗi khi đăng nhập tài khoản {email}: {repr(e)}")
-        traceback_str = traceback.format_exc()
-        logger.error(f"Chi tiết lỗi:\n{traceback_str}")
+        # logger.error(f"❗ Lỗi khi đăng nhập tài khoản {email}: {repr(e)}")
+        # traceback_str = traceback.format_exc()
+        # logger.error(f"Chi tiết lỗi:\n{traceback_str}")
         return False, repr(e)
 
 def findElement(driver, selector, backup_selector=None):
@@ -349,6 +357,21 @@ def findElement(driver, selector, backup_selector=None):
                     return driver.find_element(By.CSS_SELECTOR, backup_selector)
                 except:
                     return None
+
+def find_element_by_text(driver, tag, text, case_insensitive=True):
+    elements = driver.find_elements(By.TAG_NAME, tag)
+    text = text.strip()
+
+    for el in elements:
+        el_text = el.text.strip()
+        if case_insensitive:
+            if text.lower() in el_text.lower():
+                return el
+        else:
+            if text in el_text:
+                return el
+    return None
+
 # Hàm đăng ký Amazon chính
 def register_amazon(email, orderid, username, sdt, address, proxy, password, shopgmail_api, address_2):
     gemlogin = GemLoginAPI()
@@ -549,58 +572,29 @@ def register_amazon(email, orderid, username, sdt, address, proxy, password, sho
             return False
         is_registered = True
         # Điều hướng đến thiết lập 2FA
-
-        link_sps = read_link_sp_canada()
-        link_sp = random.choice(link_sps)
-        if len(link_sps) > 0:
-            driver.get(link_sp)
-            time.sleep(10)
-            try:
-                navbar = driver.find_element(By.ID, "nav-logobar-greeting")
-                click_element(driver, navbar)
-            except:
-                driver.get("https://www.amazon.ca/ap/signin?openid.pape.max_auth_age=0&openid.return_to=" + link_sp)
-            time.sleep(5)
-            login_success, error_reason = check_login(driver, email, password)
-            if not login_success:
-                logger.error(f"Đăng nhập thất bại cho tài khoản {email}: {error_reason}")
-                log_failed_account(email, "captcha.txt")
-                return False
-            time.sleep(5)
-            skip = driver.find_element(By.ID, "ap-account-fixup-phone-skip-link")
-            click_element(driver, skip)
-            time.sleep(5)
-            driver.get("https://www.amazon.ca/gp/css/homepage.html?ref_=nav_youraccount_btn")
-            time.sleep(5)
-            driver.get("https://www.amazon.ca/ax/account/manage?openid.return_to=https%3A%2F%2Fwww.amazon.ca%2Fyour-account%3Fref_%3Dya_cnep&openid.assoc_handle=anywhere_v2_ca&shouldShowPasskeyLink=true&passkeyEligibilityArb=60d497ef-22bd-4838-a440-1d12d0135081&passkeyMetricsActionId=d9adf7c0-25e4-46ba-960c-6d01c9e78108")
-        else:
-            driver.get("https://www.amazon.ca/ax/account/manage?openid.return_to=https%3A%2F%2Fwww.amazon.ca%2Fyour-account%3Fref_%3Dya_cnep&openid.assoc_handle=anywhere_v2_ca&shouldShowPasskeyLink=true&passkeyEligibilityArb=60d497ef-22bd-4838-a440-1d12d0135081&passkeyMetricsActionId=d9adf7c0-25e4-46ba-960c-6d01c9e78108")
+        time.sleep(5)
+        driver.get("https://www.amazon.ca/ap/signin?openid.pape.max_auth_age=900&openid.return_to=https%3A%2F%2Fwww.amazon.ca%2Fap%2Fcnep%3Fie%3DUTF8%26orig_return_to%3Dhttps%253A%252F%252Fwww.amazon.ca%252Fyour-account%26openid.assoc_handle%3Dcaflex%26pageId%3Dcaflex&openid.identity=http%3A%2F%2Fspecs.openid.net%2Fauth%2F2.0%2Fidentifier_select&openid.assoc_handle=caflex&openid.mode=checkid_setup&openid.ns.pape=http%3A%2F%2Fspecs.openid.net%2Fextensions%2Fpape%2F1.0&openid.claimed_id=http%3A%2F%2Fspecs.openid.net%2Fauth%2F2.0%2Fidentifier_select&openid.ns=http%3A%2F%2Fspecs.openid.net%2Fauth%2F2.0")
+        time.sleep(5)
+        refresh_page(driver)
+        status, error = check_login(driver, email, password)
+        if error is not None and error == "NO PASSWORD INPUT":
+            logger.error(f"CẢNH BÁO: {email} dính sdt US sau khi nhập otp")
         time.sleep(10)
-        if "www.amazon.com/ax/account/manage" not in driver.current_url and "amazon.com/ap/signin" in driver.current_url:
-            login_success, error_reason = check_login(driver, email, password)
-            if not login_success:
-                logger.error(f"Đăng nhập thất bại cho tài khoản {email}: {error_reason}")
-                log_failed_account(email, "captcha.txt")
-                return False
-            time.sleep(10)
-            # ap-account-fixup-phone-skip-link
-            try:
-                skip = driver.find_element(By.ID, "ap-account-fixup-phone-skip-link")       
-                click_element(driver, skip)
-            except:
-                if "www.amazon.com/ax/account/manage" not in driver.current_url:
-                    driver.get("https://www.amazon.ca/ax/account/manage?openid.return_to=https%3A%2F%2Fwww.amazon.ca%2Fyour-account%3Fref_%3Dya_cnep&openid.assoc_handle=anywhere_v2_ca&shouldShowPasskeyLink=true&passkeyEligibilityArb=60d497ef-22bd-4838-a440-1d12d0135081&passkeyMetricsActionId=d9adf7c0-25e4-46ba-960c-6d01c9e78108")  
-            time.sleep(15)
-        driver.refresh()
-        time.sleep(15)
+        # ap-account-fixup-phone-skip-link
+        try:
+            skip = driver.find_element(By.ID, "ap-account-fixup-phone-skip-link")       
+            click_element(driver, skip)
+        except:
+            pass
+        time.sleep(5)
         # Kích hoạt 2FA
-
-        turn_on_2fa = driver.find_element(By.ID, "TWO_STEP_VERIFICATION_BUTTON")
-        try: 
-            turn_on_2fa.click()
-        except Exception as e:
-            click_element(driver, turn_on_2fa)
+        driver.get("https://www.amazon.ca/a/settings/approval/setup/register?openid.mode=checkid_setup&ref_=ax_am_landing_add_2sv&openid.assoc_handle=anywhere_v2_ca&openid.ns=http://specs.openid.net/auth/2.0")
         time.sleep(5)  # Wait for the page to load
+        try:
+            skip = driver.find_element(By.ID, "ap-account-fixup-phone-skip-link")       
+            click_element(driver, skip)
+        except:
+            refresh_page(driver)
         def input_otp():
             form_otp_check = findElement(driver, "#verification-code-form", "#input-box-otp")
             if form_otp_check:
@@ -621,9 +615,7 @@ def register_amazon(email, orderid, username, sdt, address, proxy, password, sho
                 enable_2fa_form.submit()
             except:
                 pass
-
         input_otp()
-        
         # Kiểm tra CAPTCHA lần nữa
         if not handle_captcha(driver, email):
             log_failed_account(email, "captcha.txt")
@@ -653,14 +645,11 @@ def register_amazon(email, orderid, username, sdt, address, proxy, password, sho
             log_failed_account(email, "captcha.txt")
             return False
         input_otp()
-        
         # Kiểm tra CAPTCHA lần nữa
         if not handle_captcha(driver, email):
             log_failed_account(email, "captcha.txt")
             return False
-    
         input_otp()
-        
         time.sleep(5)
         driver.get("https://www.amazon.ca/ax/account/manage")
         time.sleep(10)
@@ -744,7 +733,7 @@ def register_amazon(email, orderid, username, sdt, address, proxy, password, sho
 
         # # Lưu tài khoản thành công
         save_account(email, password, backup_code)
-        logger.info(f" Đăng ký thành công {email}. Thực hiện click logo.")
+        # logger.info(f" Đăng ký thành công {email}. Thực hiện click logo.")
         time.sleep(5)
         try:
 
