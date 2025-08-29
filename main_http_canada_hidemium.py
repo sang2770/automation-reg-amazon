@@ -78,47 +78,71 @@ def read_link_sp_canada():
 
 config = read_config("config.json")
 
-# GemLogin API client
-class GemLoginAPI:
+# Hidemium API client
+class HidemiumAPI:
     def __init__(self):
-        self.base_url = getattr(config, "gem_login_server", "http://localhost:1010")
+        self.base_url = getattr(config, "hidemium_server", "http://127.0.0.1:2222")
         self.session = requests.Session()
 
     def create_profile(self, proxy, profile_name="AmazonProfile"):
         # Tạo cấu hình mới với proxy HTTP và hệ điều hành Android
+        # Format proxy as "HTTP|host|port|user|password"
+        proxy_str = ""
+        if proxy:
+            # Accept proxy in "host:port:user:pass" or "host:port" format
+            parts = proxy.split(":")
+            if len(parts) == 4:
+                host, port, user, password = parts
+                proxy_str = f"HTTP|{host}|{port}|{user}|{password}"
+            elif len(parts) == 2:
+                host, port = parts
+                proxy_str = f"HTTP|{host}|{port}||"
+            else:
+                proxy_str = proxy  # fallback, use as is
+
         payload = {
-            "profile_name": f"{profile_name}_{random.randint(1000, 9999)}",
-            "group_name": "All",
-            "raw_proxy": f"http://{proxy}",
-            "startup_urls": getattr(config, "reg_link", "https://www.amazon.com/amazonprime"),
-            "is_noise_canvas": False,
-            "is_noise_webgl": False,
-            "is_noise_client_rect": False,
-            "is_noise_audio_context": True,
-            "is_random_screen": False,
-            "is_masked_webgl_data": True,
-            "is_masked_media_device": True,
-            "os": {"type": "Android", "version": "14"},
-            "webrtc_mode": 2,
-            "browser_version": "137",
-            "browser_type": "chrome",
-            "language": "en",
-            "time_zone": "America/New_York",
-            "country": "United States",
+            "os": "mac",
+            "osVersion": "14.3.0",
+            "browser": "chrome",
+            "version": "137",
+            "userAgent": "",
+            "canvas": True,
+            "webGLImage": True,
+            "audioContext": False,
+            "webGLMetadata": True,
+            "webGLVendor": "",
+            "webGLMetadataRenderer": "",
+            "clientRectsEnable": True,
+            "noiseFont": False,
+            "language": "vi-VN",
+            "deviceMemory": 4,
+            "hardwareConcurrency": 32,
+            "resolution": "1280x800",
+            "StartURL": getattr(config, "reg_link", "https://www.amazon.com/amazonprime"),
+            "command": "--lang=vi",
+            "name": f"{profile_name}_{random.randint(1000, 9999)}",
+            "folder_name": "All",
+            "proxy": proxy_str
         }
-        response = self.session.post(f"{self.base_url}/api/profiles/create", json=payload)
-        if response.status_code == 200 and response.json().get("success"):
-            return response.json().get("data", {}).get("id")
+        response = self.session.post(f"{self.base_url}/create-profile-custom?is_local=true", json=payload)
+        if response.status_code == 200 or response.status_code == 201:
+            result = response.json()
+            # logger.info(f" Đã tạo cấu hình với proxy {proxy}: {result}")
+            return result.get("uuid")
         logger.error(f"CẢNH BÁO: Không tạo được cấu hình với proxy {proxy}")
         return None
 
     def start_profile(self, profile_id):
         global failed_start_profile_count
         # Khởi động trình duyệt cho cấu hình
-        response = self.session.get(f"{self.base_url}/api/profiles/start/{profile_id}")
-        if response.status_code == 200 and response.json().get("success"):
-            return response.json().get("data", {})
-        logger.error(f"CẢNH BÁO: Không khởi động được cấu hình {profile_id} {response.json().get('message')}")
+        response = self.session.get(f"{self.base_url}/openProfile?uuid={profile_id}")
+        if response.status_code == 200:
+            result = response.json()
+            # logger.info(f" Đã khởi động cấu hình {profile_id} với debug port: {result}")
+            debug_port = result.get("data", {}).get("remote_port") or result.get("remote_port")
+            if debug_port:
+                return {"remote_debugging_address": f"127.0.0.1:{debug_port}"}
+        logger.error(f"CẢNH BÁO: Không khởi động được cấu hình {profile_id}")
         failed_start_profile_count += 1
         if (failed_start_profile_count >= 10):
             stop_event.set()
@@ -128,14 +152,14 @@ class GemLoginAPI:
 
     def close_profile(self, profile_id):
         # Đóng trình duyệt
-        self.session.get(f"{self.base_url}/api/profiles/close/{profile_id}")
+        self.session.post(f"{self.base_url}/closeProfile?uuid={profile_id}")
 
     def delete_profile(self, profile_id):
         # Xóa cấu hình
-        # response = self.session.get(f"{self.base_url}/api/profiles/delete/{profile_id}")
-        # if response.status_code == 200 and response.json().get("success"):
+        # response = self.session.delete(f"{self.base_url}/api/browsers/{profile_id}")
+        # if response.status_code == 200:
         #     return True
-        # logger.error(f"CẢNH BÁO: Không xóa được cấu hình {profile_id} {response.json().get('message')}")
+        # logger.error(f"CẢNH BÁO: Không xóa được cấu hình {profile_id}")
         # return False
         return True
 
@@ -283,18 +307,107 @@ def log_failed_account(email, file_path):
         logger.info(f" Tài khoản {email} đã có trong {file_path}, không ghi lại")
 
 
-def click_element(driver, element, timeout=10):
+def click_element_deprecated(driver, element, timeout=10):
+    """Deprecated: Use driver.execute_script("arguments[0].click();", element) instead"""
     try:
         time.sleep(3)
-        # Scroll element vào giữa màn hình
-        driver.execute_script("arguments[0].scrollIntoView({block: 'center'});", element)
-        # Click bằng JS
-        driver.execute_script("arguments[0].click();", element)
+        element.click()
+        
     except Exception as ex:
         try:
-            element.click()
+            # Scroll element vào giữa màn hình
+            driver.execute_script("arguments[0].scrollIntoView({block: 'center'});", element)
+            # Click bằng JS
+            driver.execute_script("arguments[0].click();", element)
         except Exception as e:
             raise ex
+
+# Common click functions
+def click_by_id(driver, element_id, scroll_first=True):
+    """Click element by ID using document.querySelector"""
+    try:
+        if scroll_first:
+            driver.execute_script(f"document.querySelector('#{element_id}').scrollIntoView({{block: 'center'}});")
+            time.sleep(0.5)
+        driver.execute_script(f"document.querySelector('#{element_id}').click();")
+        return True
+    except Exception as e:
+        logger.warning(f"Failed to click element #{element_id}: {repr(e)}")
+        return False
+
+def click_by_selector(driver, selector, scroll_first=True):
+    """Click element by CSS selector using document.querySelector"""
+    try:
+        if scroll_first:
+            driver.execute_script(f"document.querySelector(arguments[0]).scrollIntoView({{block: 'center'}});", selector)
+            time.sleep(0.5)
+        driver.execute_script(f"document.querySelector(arguments[0]).click();", selector)
+        return True
+    except Exception as e:
+        logger.warning(f"Failed to click element {repr(e)}")
+        return False
+
+def click_element_js(driver, element, scroll_first=True):
+    """Click element using JavaScript with optional scrolling"""
+    try:
+        if scroll_first:
+            driver.execute_script("arguments[0].scrollIntoView({block: 'center'});", element)
+            time.sleep(0.5)
+        driver.execute_script("arguments[0].click();", element)
+        return True
+    except Exception as e:
+        logger.warning(f"Failed to click element: {repr(e)}")
+        return False
+
+def safe_click(driver, element=None, selector=None, element_id=None, scroll_first=True, timeout=3):
+    """Safe click with multiple fallback methods"""
+    try:
+        # Method 1: Click by ID if provided
+        if element_id:
+            if click_by_id(driver, element_id, scroll_first):
+                return True
+        
+        # Method 2: Click by selector if provided
+        if selector:
+            if click_by_selector(driver, selector, scroll_first):
+                return True
+        
+        # Method 3: Click element directly if provided
+        if element:
+            if click_element_js(driver, element, scroll_first):
+                return True
+        
+        # If all methods failed
+        logger.error("All click methods failed")
+        return False
+        
+    except Exception as e:
+        logger.error(f"Safe click failed: {repr(e)}")
+        return False
+
+# Common Amazon-specific click functions
+def click_amazon_button(driver, button_id):
+    """Click common Amazon buttons with fallback methods"""
+    amazon_buttons = {
+        "continue": ["#continue", "#continue-announce", "[name='continue']"],
+        "submit": ["#signInSubmit", "[type='submit']", ".a-button-input"],
+        "create_account": ["#createAccountSubmit", "#register_accordion_header"],
+        "verify": ["input[aria-label='Verify OTP Button']", "#cvf-submit-otp-button"],
+        "skip": ["#ap-account-fixup-phone-skip-link", ".a-link-normal"]
+    }
+    
+    if button_id in amazon_buttons:
+        selectors = amazon_buttons[button_id]
+        for selector in selectors:
+            if click_by_selector(driver, selector, scroll_first=True):
+                logger.info(f"Successfully clicked {button_id} using selector: {selector}")
+                return True
+        
+        logger.warning(f"Failed to click {button_id} with all selectors")
+        return False
+    else:
+        logger.error(f"Unknown Amazon button: {button_id}")
+        return False
         
 def focus_input(driver, element):
     try:
@@ -336,20 +449,20 @@ def check_login(driver, email, password):
     try:
         is_login = False
         try:
-            skip = driver.find_element(By.ID, "ap-account-fixup-phone-skip-link")       
-            click_element(driver, skip)
-            is_login = True
+            driver.find_element(By.ID, "ap-account-fixup-phone-skip-link")       
+            click_by_id(driver, "ap-account-fixup-phone-skip-link")
         except:
             pass
         wait = WebDriverWait(driver, 15)
         # Nhập email
-        email_input = wait.until(EC.visibility_of_element_located((By.ID, "ap_email_login")))
+        email_input = wait.until(EC.visibility_of_element_located((By.ID, "ap_email")))
         human_type(email_input, email)
+        is_login = True
         try:
             form_login = driver.find_element(By.CSS_SELECTOR, "form[name='signIn']")
             form_login.submit() 
         except:
-            click_element(driver, driver.find_element(By.ID, "continue-announce"))
+            click_amazon_button(driver, "continue")
         refresh_page(driver)
         if "ap/cvf" in driver.current_url or not handle_captcha(driver, email):
             logger.error(f"🚫 CAPTCHA sau email: {email}")
@@ -367,7 +480,7 @@ def check_login(driver, email, password):
             form_login = driver.find_element(By.CSS_SELECTOR, "form[name='signIn']")
             form_login.submit()
         except: 
-            click_element(driver, driver.find_element(By.ID, "signInSubmit"))
+            click_amazon_button(driver, "submit")
         refresh_page(driver)
         if "ap/cvf" in driver.current_url or not handle_captcha(driver, email):
             logger.error(f"🚫 CAPTCHA sau mật khẩu: {email}")
@@ -404,31 +517,31 @@ def find_element_by_text(driver, tag, text, case_insensitive=True):
 
 # Hàm đăng ký Amazon chính
 def register_amazon(email, orderid, username, sdt, address, proxy, password, shopgmail_api, address_2):
-    gemlogin = GemLoginAPI()
+    hidemium = HidemiumAPI()
 
     if not email or not orderid:
         logger.error("CẢNH BÁO: Không thể tạo Gmail mới")
         return False
     time.sleep(15)
     # Tạo cấu hình mới
-    profile_id = gemlogin.create_profile(proxy, f"Profile_{email}")
+    profile_id = hidemium.create_profile(proxy, f"Profile_{email}")
     if not profile_id:
         logger.error(f"CẢNH BÁO: Không tạo được cấu hình cho {email}")
         return False
     
     # Khởi động trình duyệt
-    profile_data = gemlogin.start_profile(profile_id)
+    profile_data = hidemium.start_profile(profile_id)
     if not profile_data:
         logger.error(f"CẢNH BÁO: Không khởi động được cấu hình cho {email}")
-        gemlogin.delete_profile(profile_id)
+        hidemium.delete_profile(profile_id)
         return False
     
     
     remote_debugging_address = profile_data.get("remote_debugging_address")
     if not remote_debugging_address:
         logger.error(f"CẢNH BÁO: Không có địa chỉ gỡ lỗi từ xa cho {email}")
-        gemlogin.close_profile(profile_id)
-        gemlogin.delete_profile(profile_id)
+        hidemium.close_profile(profile_id)
+        hidemium.delete_profile(profile_id)
         return False
     
     # Thiết lập Selenium với trình duyệt của GemLogin
@@ -455,15 +568,11 @@ def register_amazon(email, orderid, username, sdt, address, proxy, password, sho
                             EC.presence_of_element_located((By.CSS_SELECTOR, 'form[action="/gp/prime/pipeline/membersignup"]'))
                         )
                         form.submit()
-                    elif "audible.com" in start_link:
-                        driver.get("https://www.amazon.com/ap/signin?clientContext=135-4992534-7011834&openid.pape.max_auth_age=900&openid.return_to=https%3A%2F%2Fwww.audible.com%2F%3FloginAttempt%3Dtrue&openid.identity=http%3A%2F%2Fspecs.openid.net%2Fauth%2F2.0%2Fidentifier_select&openid.assoc_handle=audible_experiment_shared_web_us&openid.mode=checkid_setup&siteState=audibleid.userType%3Damzn%2Caudibleid.mode%3Did_res&marketPlaceId=AF2M0KC94RCEA&language=en_US&openid.claimed_id=http%3A%2F%2Fspecs.openid.net%2Fauth%2F2.0%2Fidentifier_select&pageId=amzn_audible_bc_us&openid.ns=http%3A%2F%2Fspecs.openid.net%2Fauth%2F2.0")
-                        time.sleep(10)
                     elif ("sellercentral.amazon.com" in start_link) and ("sellercentral.amazon.com/ap/signin" not in start_link):
                         btn_sign_ins = driver.find_elements(By.TAG_NAME, "button")
                         sign_up_btn = next((btn for btn in btn_sign_ins if btn.text.strip() == 'Sign up'), None)
                         if sign_up_btn:
-                            # sign_up_btn.click()
-                            click_element(driver, sign_up_btn)
+                            click_element_js(driver, sign_up_btn)
                         else:
                             logger.error(f"Không tìm thấy button Sign up")
                             max_retry -= 1
@@ -472,69 +581,53 @@ def register_amazon(email, orderid, username, sdt, address, proxy, password, sho
                         btn_sign_ins = driver.find_elements(By.TAG_NAME, "a")
                         sign_up_btn = next((btn for btn in btn_sign_ins if btn.text.strip() == 'Sign up'), None)
                         if sign_up_btn:
-                            click_element(driver, sign_up_btn)
+                            click_element_js(driver, sign_up_btn)
+                            time.sleep(5)
                         else:
                             logger.error(f"Không tìm thấy button Sign up")
                             max_retry -= 1
+                    elif "audible.com" in start_link:
+                        driver.get("https://www.amazon.com/ap/signin?clientContext=135-4992534-7011834&openid.pape.max_auth_age=900&openid.return_to=https%3A%2F%2Fwww.audible.com%2F%3FloginAttempt%3Dtrue&openid.identity=http%3A%2F%2Fspecs.openid.net%2Fauth%2F2.0%2Fidentifier_select&openid.assoc_handle=audible_experiment_shared_web_us&openid.mode=checkid_setup&siteState=audibleid.userType%3Damzn%2Caudibleid.mode%3Did_res&marketPlaceId=AF2M0KC94RCEA&language=en_US&openid.claimed_id=http%3A%2F%2Fspecs.openid.net%2Fauth%2F2.0%2Fidentifier_select&pageId=amzn_audible_bc_us&openid.ns=http%3A%2F%2Fspecs.openid.net%2Fauth%2F2.0")
+                        time.sleep(10)
                     elif "woot.com" in start_link:
                         time.sleep(10)
-                        driver.get("https://www.woot.com/?ref=mwj_gnav_home")
+                        driver.get("https://auth.woot.com/ap/signin?openid.ns=http%3a%2f%2fspecs.openid.net%2fauth%2f2.0&openid.identity=http%3a%2f%2fspecs.openid.net%2fauth%2f2.0%2fidentifier_select&openid.claimed_id=http%3a%2f%2fspecs.openid.net%2fauth%2f2.0%2fidentifier_select&rmrMeStringID=ap_rememeber_me_default_message&openid.ns.pape=http%3a%2f%2fspecs.openid.net%2fextensions%2fpape%2f1.0&server=%2fap%2fsignin%3fie%3dUTF8&openid.ns.oa2=http%3a%2f%2fwww.amazon.com%2fap%2fext%2foauth%2f2&openid.oa2.client_id=device%3a70c7390e4ff54cefbda52d3b5b7fbbca&openid.oa2.response_type=code&openid.oa2.code_challenge=fthSXqjug7QpFls8kgd50cks37c6nBhN2qUqKp-wVac&openid.oa2.code_challenge_method=S256&openid.mode=checkid_setup&openid.assoc_handle=amzn_woot_desktop_us&pageId=wootgreen&openid.oa2.scope=device_auth_access&openid.return_to=https%3a%2f%2faccount.woot.com%2fauth%3freturnUrl%3dhttps%253A%252F%252Fwww.woot.com%252F%26useNewUI%3duseNewUI%253Dtrue%26rebrand2025%3drebrand2025%253Dtrue%26verificationToken%3d4c6546cd19a04e0bc7e80986e17a99da45a5cee24eb5689f4bcbdf6d3a09547e&amzn_acc=true#signin")
                         time.sleep(10)
-                        driver.get("https://auth.woot.com/ap/signin?openid.ns=http%3a%2f%2fspecs.openid.net%2fauth%2f2.0&openid.identity=http%3a%2f%2fspecs.openid.net%2fauth%2f2.0%2fidentifier_select&openid.claimed_id=http%3a%2f%2fspecs.openid.net%2fauth%2f2.0%2fidentifier_select&rmrMeStringID=ap_rememeber_me_default_message&openid.ns.pape=http%3a%2f%2fspecs.openid.net%2fextensions%2fpape%2f1.0&server=%2fap%2fsignin%3fie%3dUTF8&openid.ns.oa2=http%3a%2f%2fwww.amazon.com%2fap%2fext%2foauth%2f2&openid.oa2.client_id=device%3a70c7390e4ff54cefbda52d3b5b7fbbca&openid.oa2.response_type=code&openid.oa2.code_challenge=ldYXwZ6IoyOaqes8uT0ac7R139zpEQMEJ23tQ6ByKZM&openid.oa2.code_challenge_method=S256&openid.mode=checkid_setup&openid.assoc_handle=amzn_woot_mobile_us&pageId=wootgreen&openid.oa2.scope=device_auth_access&openid.return_to=https%3a%2f%2faccount.woot.com%2fauth%3freturnUrl%3dhttps%253A%252F%252Faccount.woot.com%252F%26useNewUI%3duseNewUI%253Dtrue%26rebrand2025%3drebrand2025%253Dtrue%26verificationToken%3d0d5015773f3680f997e7f81631032320e163265b06fd3909924ff5d05da5e5ac&amzn_acc=true")
+                        driver.get("https://na.account.amazon.com/ap/signin?_encoding=UTF8&openid.mode=checkid_setup&openid.ns=http%3A%2F%2Fspecs.openid.net%2Fauth%2F2.0&openid.claimed_id=http%3A%2F%2Fspecs.openid.net%2Fauth%2F2.0%2Fidentifier_select&openid.pape.max_auth_age=0&ie=UTF8&openid.ns.pape=http%3A%2F%2Fspecs.openid.net%2Fextensions%2Fpape%2F1.0&openid.identity=http%3A%2F%2Fspecs.openid.net%2Fauth%2F2.0%2Fidentifier_select&openid.assoc_handle=amzn_lwa_na&marketPlaceId=ATVPDKIKX0DER&arb=c9c3d559-7857-4fd7-b6a7-edefe01c3728&language=en_US&openid.return_to=https%3A%2F%2Fna.account.amazon.com%2Fap%2Foa%3FmarketPlaceId%3DATVPDKIKX0DER%26arb%3Dc9c3d559-7857-4fd7-b6a7-edefe01c3728%26language%3Den_US&enableGlobalAccountCreation=1&metricIdentifier=amzn1.application.1a921404150f44eb8a14f7c2bfa2f008&signedMetricIdentifier=%2B2kJ4QB725KTB%2FdrD%2B0wLJD5sjO9%2FG83I1jto1ql4D0%3D")
                         time.sleep(10)
-                        btn_create = driver.find_element(By.ID, "createAccountSubmit")
-                        click_element(driver, btn_create)
                     elif "zappos.com" in start_link:
-                        try:
-                            btn_user = driver.find_element(By.CSS_SELECTOR, "[aria-label='Sign In']")
-                            click_element(driver, btn_user)
-                            time.sleep(10)
-                            btn_sign_in = driver.find_element(By.ID, "amazonSignIn")
-                            click_element(driver, btn_sign_in)
-                            time.sleep(10)
-                        except:
-                            driver.get("https://www.zappos.com/federated-login")
-                            time.sleep(10)
-                            btn_sign_in = driver.find_element(By.ID, "amazonSignIn")
-                            click_element(driver, btn_sign_in)
-                            time.sleep(10)
+                        driver.get("https://www.zappos.com/federated-login")
+                        time.sleep(10)
+                        driver.get("https://na.account.amazon.com/ap/signin?_encoding=UTF8&openid.mode=checkid_setup&openid.ns=http%3A%2F%2Fspecs.openid.net%2Fauth%2F2.0&openid.claimed_id=http%3A%2F%2Fspecs.openid.net%2Fauth%2F2.0%2Fidentifier_select&openid.pape.max_auth_age=0&ie=UTF8&openid.ns.pape=http%3A%2F%2Fspecs.openid.net%2Fextensions%2Fpape%2F1.0&openid.identity=http%3A%2F%2Fspecs.openid.net%2Fauth%2F2.0%2Fidentifier_select&pageId=lwa&openid.assoc_handle=amzn_lwa_na&marketPlaceId=ATVPDKIKX0DER&arb=548af87d-e159-4bfb-bea9-3e3dde6d215d&language=en_US&openid.return_to=https%3A%2F%2Fna.account.amazon.com%2Fap%2Foa%3FmarketPlaceId%3DATVPDKIKX0DER%26arb%3D548af87d-e159-4bfb-bea9-3e3dde6d215d%26language%3Den_US&enableGlobalAccountCreation=1&metricIdentifier=amzn1.application.d7323c22c1f240eaa7412c7fc5d3fd64&signedMetricIdentifier=ABhE9UOwTDbtBMDGebYFKfI3vlGBXQPjrA68W9LwMO8%3D")
+                        time.sleep(10)
                     elif "imdb.com" in start_link:
                         time.sleep(10)
                         driver.get("https://www.imdb.com/registration/signin/?u=%2F&ref_=hm_nv_generic_lgin")
                         time.sleep(10)
-                        #data-testid="create_account"
-                        create_account_button = wait.until(EC.presence_of_element_located((By.CSS_SELECTOR, "[data-testid='sign_in_option_AMAZON']")))
-                        click_element(driver, create_account_button)
-                        time.sleep(10)
-                        ##createAccountSubmit
-                        create_account_button = wait.until(EC.presence_of_element_located((By.ID, "createAccountSubmit")))
-                        click_element(driver, create_account_button)
+                        driver.get("https://na.account.amazon.com/ap/signin?_encoding=UTF8&openid.mode=checkid_setup&openid.ns=http%3A%2F%2Fspecs.openid.net%2Fauth%2F2.0&openid.claimed_id=http%3A%2F%2Fspecs.openid.net%2Fauth%2F2.0%2Fidentifier_select&openid.pape.max_auth_age=0&ie=UTF8&openid.ns.pape=http%3A%2F%2Fspecs.openid.net%2Fextensions%2Fpape%2F1.0&openid.identity=http%3A%2F%2Fspecs.openid.net%2Fauth%2F2.0%2Fidentifier_select&pageId=lwa&openid.assoc_handle=amzn_lwa_na&marketPlaceId=ATVPDKIKX0DER&arb=64453e52-3e7d-44d2-8b18-43709bfad80d&language=en_US&openid.return_to=https%3A%2F%2Fna.account.amazon.com%2Fap%2Foa%3FmarketPlaceId%3DATVPDKIKX0DER%26arb%3D64453e52-3e7d-44d2-8b18-43709bfad80d%26language%3Den_US&enableGlobalAccountCreation=1&metricIdentifier=amzn1.application.eb539eb1b9fb4de2953354ec9ed2e379&signedMetricIdentifier=fLsotU64%2FnKAtrbZ2LjdFmdwR3SEUemHOZ5T2deI500%3D")
                         time.sleep(10)
                     elif "goodreads.com/" in start_link:
                         # select a element with text "Continue with Amazon"
                         time.sleep(10)
                         try: 
                             amazon_link = driver.find_element(By.XPATH, "//a[contains(text(), 'Continue with Amazon')]")
-                            click_element(driver, amazon_link)
+                            click_by_selector(driver, "a")
                         except:
-                            driver.get("https://na.account.amazon.com/ap/signin?_encoding=UTF8&openid.mode=checkid_setup&openid.ns=http%3A%2F%2Fspecs.openid.net%2Fauth%2F2.0&openid.claimed_id=http%3A%2F%2Fspecs.openid.net%2Fauth%2F2.0%2Fidentifier_select&openid.pape.max_auth_age=0&ie=UTF8&openid.ns.pape=http%3A%2F%2Fspecs.openid.net%2Fextensions%2Fpape%2F1.0&openid.identity=http%3A%2F%2Fspecs.openid.net%2Fauth%2F2.0%2Fidentifier_select&pageId=lwa&openid.assoc_handle=amzn_lwa_na&marketPlaceId=ATVPDKIKX0DER&arb=75be9783-95cd-4d76-932c-44d8612b4a65&language=en_US&openid.return_to=https%3A%2F%2Fna.account.amazon.com%2Fap%2Foa%3FmarketPlaceId%3DATVPDKIKX0DER%26arb%3D75be9783-95cd-4d76-932c-44d8612b4a65%26language%3Den_US&enableGlobalAccountCreation=1&metricIdentifier=amzn1.application.7ff8a2be5dae490b9914b4f430ca5c4c&signedMetricIdentifier=pjdsmDnaXhj%2FNbw9hCvWIQvTgX0htu%2BjAbCBVOtDWHM%3D")
+                            driver.get("https://na.account.amazon.com/ap/signin?_encoding=UTF8&openid.mode=checkid_setup&openid.ns=http%3A%2F%2Fspecs.openid.net%2Fauth%2F2.0&openid.claimed_id=http%3A%2F%2Fspecs.openid.net%2Fauth%2F2.0%2Fidentifier_select&openid.pape.max_auth_age=0&ie=UTF8&openid.ns.pape=http%3A%2F%2Fspecs.openid.net%2Fextensions%2Fpape%2F1.0&openid.identity=http%3A%2F%2Fspecs.openid.net%2Fauth%2F2.0%2Fidentifier_select&pageId=lwa&openid.assoc_handle=amzn_lwa_na&marketPlaceId=ATVPDKIKX0DER&arb=2e316644-b806-481e-9f63-2208d3c97967&language=en_US&openid.return_to=https%3A%2F%2Fna.account.amazon.com%2Fap%2Foa%3FmarketPlaceId%3DATVPDKIKX0DER%26arb%3D2e316644-b806-481e-9f63-2208d3c97967%26language%3Den_US&enableGlobalAccountCreation=1&metricIdentifier=amzn1.application.7ff8a2be5dae490b9914b4f430ca5c4c&signedMetricIdentifier=pjdsmDnaXhj%2FNbw9hCvWIQvTgX0htu%2BjAbCBVOtDWHM%3D")
                             time.sleep(10)
                     elif "luna.amazon.com/" in start_link:
                         try: 
                             time.sleep(10)
-                            #id="menu"
-                            menu_button = driver.find_element(By.ID, "menu")
-                            click_element(driver, menu_button)
-                            time.sleep(10)
-                            sign_in_button = driver.find_element(By.ID, "item_global_overlay_sign_in_button")
-                            click_element(driver, sign_in_button)
+                            driver.get("https://www.amazon.com/ap/signin?openid.pape.max_auth_age=3600&openid.return_to=https%3A%2F%2Fluna.amazon.com%2Flibrary&openid.identity=http%3A%2F%2Fspecs.openid.net%2Fauth%2F2.0%2Fidentifier_select&openid.assoc_handle=tempo_us&openid.mode=checkid_setup&language=en_US&openid.claimed_id=http%3A%2F%2Fspecs.openid.net%2Fauth%2F2.0%2Fidentifier_select&openid.ns=http%3A%2F%2Fspecs.openid.net%2Fauth%2F2.0")
                         except:
                             driver.get("https://www.amazon.com/ap/signin?openid.pape.max_auth_age=3600&openid.return_to=https%3A%2F%2Fluna.amazon.com%2F&openid.identity=http%3A%2F%2Fspecs.openid.net%2Fauth%2F2.0%2Fidentifier_select&openid.assoc_handle=tempo_us&openid.mode=checkid_setup&language=en_US&openid.claimed_id=http%3A%2F%2Fspecs.openid.net%2Fauth%2F2.0%2Fidentifier_select&openid.ns=http%3A%2F%2Fspecs.openid.net%2Fauth%2F2.0")
                         time.sleep(10)
-
-                    # Chọn Tạo tài khoản
-                    create_account_button = wait.until(EC.presence_of_element_located((By.ID, "register_accordion_header")))
-                    click_element(driver, create_account_button)
+                    
+                    click_by_id(driver, "createAccountSubmit")
+                    time.sleep(5)
+                    # # Chọn Tạo tài khoản
+                    # wait.until(EC.presence_of_element_located((By.ID, "register_accordion_header")))
+                    # click_by_id(driver, "register_accordion_header")
                     # Điền biểu mẫu đăng ký
                     name_field = wait.until(EC.presence_of_element_located((By.ID, "ap_customer_name")))
                     focus_input(driver, name_field)
@@ -547,15 +640,19 @@ def register_amazon(email, orderid, username, sdt, address, proxy, password, sho
                     # password = ''.join(random.choices(string.ascii_letters + string.digits, k=12))
                     # password = "123456aA@Sang"
                     password_field = driver.find_element(By.ID, "ap_password")
-                    click_element(driver, password_field)
+                    click_by_id(driver, "ap_password")
                     time.sleep(3)
                     human_type(password_field, password)
+
+                    repeat_password_field = driver.find_element(By.ID, "ap_password_check")
+                    focus_input(driver, repeat_password_field)
+                    human_type(repeat_password_field, password)
 
                     try:
                         register_form = driver.find_element(By.ID, "ap_register_form")
                         register_form.submit()
                     except:
-                        click_element(driver, driver.find_element(By.ID, "continue"))
+                        click_amazon_button(driver, "continue")
                     
                     # Kiểm tra CAPTCHA
                     if not handle_captcha(driver, email):
@@ -590,11 +687,12 @@ def register_amazon(email, orderid, username, sdt, address, proxy, password, sho
             otp_field = wait.until(EC.presence_of_element_located((By.ID, "cvf-input-code")))
             human_type(otp_field, otp)
             try:
-                verify_button = WebDriverWait(driver, 10).until(EC.presence_of_element_located((By.CSS_SELECTOR, "input[aria-label='Verify OTP Button']")))
-                click_element(driver, verify_button)
-            except:
+                time.sleep(5)
                 verify_form = driver.find_element(By.ID, "verification-code-form") 
                 verify_form.submit()
+                
+            except:
+                click_by_selector(driver, "input[aria-label='Verify OTP Button']")
             time.sleep(10)
         else: 
             time.sleep(5)
@@ -608,9 +706,6 @@ def register_amazon(email, orderid, username, sdt, address, proxy, password, sho
             try:
                 
                 phone_verification_checks = [
-                    (lambda: find_element_by_text(driver, "h1", "Add mobile number"), "US"),
-                    (lambda: find_element_by_text(driver, "h1", "Add cell number"), "CA"),
-                    (lambda: findElement(driver, "#cvf_phone_number_label", None), "US"),
                     (lambda: driver.current_url.startswith("https://www.amazon.com/ap/cvf/verify"), "US"),
                     (lambda: driver.current_url.startswith("https://www.amazon.ca/ap/accountfixup"), "CA")
                 ]
@@ -640,8 +735,7 @@ def register_amazon(email, orderid, username, sdt, address, proxy, password, sho
         time.sleep(10)
         # ap-account-fixup-phone-skip-link
         try:
-            skip = driver.find_element(By.ID, "ap-account-fixup-phone-skip-link")       
-            click_element(driver, skip)
+            click_by_id(driver, "ap-account-fixup-phone-skip-link")
         except:
             pass
         time.sleep(5)
@@ -650,7 +744,7 @@ def register_amazon(email, orderid, username, sdt, address, proxy, password, sho
         time.sleep(5)  # Wait for the page to load
         try:
             skip = driver.find_element(By.ID, "ap-account-fixup-phone-skip-link")       
-            click_element(driver, skip)
+            click_by_id(driver, "ap-account-fixup-phone-skip-link")
         except:
             refresh_page(driver)
         def input_otp():
@@ -668,7 +762,7 @@ def register_amazon(email, orderid, username, sdt, address, proxy, password, sho
             # Confirm button enable-mfa-form-submit
             try: 
                 enable_chechbox = wait.until(EC.presence_of_element_located((By.NAME, "trustThisDevice")))
-                click_element(driver, enable_chechbox)
+                click_by_selector(driver, "[name='trustThisDevice']")
                 enable_2fa_form = wait.until(EC.presence_of_element_located((By.ID, "enable-mfa-form")))
                 enable_2fa_form.submit()
             except:
@@ -680,10 +774,12 @@ def register_amazon(email, orderid, username, sdt, address, proxy, password, sho
             return False
         
         # Id cvf-submit-otp-button
-        section_otp = wait.until(EC.presence_of_element_located((By.ID, "sia-otp-accordion-totp-header")))
-        click_element(driver, section_otp)
+        wait.until(EC.presence_of_element_located((By.ID, "sia-otp-accordion-totp-header")))
+        click_by_id(driver, "sia-otp-accordion-totp-header")
         # get sia-auth-app-formatted-secret
-        backup_code = driver.find_element(By.ID, "sia-auth-app-formatted-secret").text
+        backup_code = driver.execute_script(
+            "return document.getElementById('sia-auth-app-formatted-secret').textContent.trim();"
+        )
         
         # get 2fa OTP code from secret
         otp_2fa = get_2fa_code(backup_code)
@@ -694,8 +790,7 @@ def register_amazon(email, orderid, username, sdt, address, proxy, password, sho
         
         otp_field_2fa = wait.until(EC.presence_of_element_located((By.ID, "ch-auth-app-code-input")))
         human_type(otp_field_2fa, otp_2fa)
-        formConfirm =  wait.until(EC.presence_of_element_located((By.ID, "sia-add-auth-app-form")))
-        formConfirm.submit()
+        click_by_id(driver, "ch-auth-app-submit")
         time.sleep(5)
         
         # Kiểm tra CAPTCHA lần nữa
@@ -707,21 +802,17 @@ def register_amazon(email, orderid, username, sdt, address, proxy, password, sho
         if not handle_captcha(driver, email):
             log_failed_account(email, "captcha.txt")
             return False
+        time.sleep(5)
         input_otp()
         time.sleep(5)
         driver.get("https://www.amazon.ca/ax/account/manage")
         time.sleep(10)
-        navbar = driver.find_element(By.ID, "nav-button-avatar")
-        click_element(driver, navbar)
-        time.sleep(5)
-        driver.get("https://www.amazon.ca/gp/css/homepage.html?ref_=navm_accountmenu_account")
-        time.sleep(5)
         driver.get("https://www.amazon.ca/cpe/yourpayments/settings/manageoneclick")
         time.sleep(5)
         try:
             add_btn = driver.find_element(By.CSS_SELECTOR, '[name="ppw-widgetEvent:AddOneClickEvent:{}"]')
             if add_btn:
-                click_element(driver, add_btn)
+                click_by_selector(driver, '[name="ppw-widgetEvent:AddOneClickEvent:{}"]')
                 time.sleep(5)
                 add_name, city, state, zipcode = address.split("|")
 
@@ -763,7 +854,7 @@ def register_amazon(email, orderid, username, sdt, address, proxy, password, sho
                 def submit_add():
                     try:
                         continue_btn = driver.find_element(By.CSS_SELECTOR, '[name="ppw-widgetEvent:AddAddressEvent"]')
-                        click_element(driver, continue_btn)
+                        click_by_selector(driver, '[name="ppw-widgetEvent:AddAddressEvent"]')
                     except:
                         form = driver.find_element(By.CSS_SELECTOR, "form.pmts-portal-component")
                         form.submit()
@@ -794,16 +885,12 @@ def register_amazon(email, orderid, username, sdt, address, proxy, password, sho
         # logger.info(f" Đăng ký thành công {email}. Thực hiện click logo.")
         time.sleep(5)
         try:
-
-            logo_btn = driver.find_element(By.ID, "nav-hamburger-menu")
-            click_element(driver, logo_btn)
-            time.sleep(5)
             driver.get("https://www.amazon.ca/gp/bestsellers/?ref_=navm_em_bestsellers_0_1_1_2")
             time.sleep(5)
             links = driver.find_elements(By.CSS_SELECTOR, "a.a-link-normal")
             if  len(links) > 0:
                 random_link = random.choice(links)
-                click_element(driver, random_link)
+                click_by_selector(driver, "a.a-link-normal")
                 time.sleep(5)
         except:
             item_links = read_link_sp_canada()
@@ -817,10 +904,10 @@ def register_amazon(email, orderid, username, sdt, address, proxy, password, sho
         return False
     finally:
         driver.close()
-        gemlogin.close_profile(profile_id)
+        hidemium.close_profile(profile_id)
         if is_registered: 
             save_account(email, password, backup_code, "account_created.txt")
-        # if not gemlogin.delete_profile(profile_id):
+        # if not hidemium.delete_profile(profile_id):
         #     logger.error(f"CẢNH BÁO: Không xóa được cấu hình {profile_id} cho {email}")
 
 

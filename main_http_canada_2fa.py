@@ -333,9 +333,11 @@ def refresh_page(driver):
     time.sleep(5)
 def check_login(driver, email, password):
     try:
+        is_login = False
         try:
             skip = driver.find_element(By.ID, "ap-account-fixup-phone-skip-link")       
             click_element(driver, skip)
+            is_login = True
         except:
             pass
         wait = WebDriverWait(driver, 15)
@@ -357,7 +359,9 @@ def check_login(driver, email, password):
             pwd_input = wait.until(EC.visibility_of_element_located((By.ID, "ap_password")))
             human_type(pwd_input, password)
         except:
-            return False, "NO PASSWORD INPUT"
+            if is_login:
+                return False, "NO PASSWORD INPUT"
+            return False, None
         try:
             form_login = driver.find_element(By.CSS_SELECTOR, "form[name='signIn']")
             form_login.submit()
@@ -450,6 +454,9 @@ def register_amazon(email, orderid, username, sdt, address, proxy, password, sho
                             EC.presence_of_element_located((By.CSS_SELECTOR, 'form[action="/gp/prime/pipeline/membersignup"]'))
                         )
                         form.submit()
+                    elif "audible.com" in start_link:
+                        driver.get("https://www.amazon.com/ap/signin?clientContext=135-4992534-7011834&openid.pape.max_auth_age=900&openid.return_to=https%3A%2F%2Fwww.audible.com%2F%3FloginAttempt%3Dtrue&openid.identity=http%3A%2F%2Fspecs.openid.net%2Fauth%2F2.0%2Fidentifier_select&openid.assoc_handle=audible_experiment_shared_web_us&openid.mode=checkid_setup&siteState=audibleid.userType%3Damzn%2Caudibleid.mode%3Did_res&marketPlaceId=AF2M0KC94RCEA&language=en_US&openid.claimed_id=http%3A%2F%2Fspecs.openid.net%2Fauth%2F2.0%2Fidentifier_select&pageId=amzn_audible_bc_us&openid.ns=http%3A%2F%2Fspecs.openid.net%2Fauth%2F2.0")
+                        time.sleep(10)
                     elif ("sellercentral.amazon.com" in start_link) and ("sellercentral.amazon.com/ap/signin" not in start_link):
                         btn_sign_ins = driver.find_elements(By.TAG_NAME, "button")
                         sign_up_btn = next((btn for btn in btn_sign_ins if btn.text.strip() == 'Sign up'), None)
