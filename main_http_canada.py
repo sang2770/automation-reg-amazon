@@ -332,24 +332,74 @@ def select_autocomplete(driver):
 def refresh_page(driver):
     driver.refresh()
     time.sleep(5)
+
+def click_by_id(driver, element_id, scroll_first=True):
+    """Click element by ID using document.querySelector"""
+    try:
+        if scroll_first:
+            driver.execute_script(f"document.querySelector('#{element_id}').scrollIntoView({{block: 'center'}});")
+            time.sleep(0.5)
+        driver.execute_script(f"document.querySelector('#{element_id}').click();")
+        return True
+    except Exception as e:
+        logger.warning(f"Failed to click element #{element_id}: {repr(e)}")
+        return False
+
+
+def click_by_selector(driver, selector, scroll_first=True):
+    """Click element by CSS selector using document.querySelector"""
+    try:
+        if scroll_first:
+            driver.execute_script(f"document.querySelector(arguments[0]).scrollIntoView({{block: 'center'}});", selector)
+            time.sleep(0.5)
+        driver.execute_script(f"document.querySelector(arguments[0]).click();", selector)
+        return True
+    except Exception as e:
+        logger.warning(f"Failed to click element {repr(e)}")
+        return False
+
+
+def click_amazon_button(driver, button_id):
+    """Click common Amazon buttons with fallback methods"""
+    amazon_buttons = {
+        "continue": ["#continue", "#continue-announce", "[name='continue']"],
+        "submit": ["#signInSubmit", "[type='submit']", ".a-button-input"],
+        "create_account": ["#createAccountSubmit", "#register_accordion_header"],
+        "verify": ["input[aria-label='Verify OTP Button']", "#cvf-submit-otp-button"],
+        "skip": ["#ap-account-fixup-phone-skip-link", ".a-link-normal"]
+    }
+    
+    if button_id in amazon_buttons:
+        selectors = amazon_buttons[button_id]
+        for selector in selectors:
+            if click_by_selector(driver, selector, scroll_first=True):
+                logger.info(f"Successfully clicked {button_id} using selector: {selector}")
+                return True
+        
+        logger.warning(f"Failed to click {button_id} with all selectors")
+        return False
+    else:
+        logger.error(f"Unknown Amazon button: {button_id}")
+        return False
+
 def check_login(driver, email, password):
     try:
         is_login = False
         try:
-            skip = driver.find_element(By.ID, "ap-account-fixup-phone-skip-link")       
-            click_element(driver, skip)
-            is_login = True
+            driver.find_element(By.ID, "ap-account-fixup-phone-skip-link")       
+            click_by_id(driver, "ap-account-fixup-phone-skip-link")
         except:
             pass
         wait = WebDriverWait(driver, 15)
         # Nhập email
         email_input = wait.until(EC.visibility_of_element_located((By.ID, "ap_email_login")))
         human_type(email_input, email)
+        is_login = True
         try:
             form_login = driver.find_element(By.CSS_SELECTOR, "form[name='signIn']")
             form_login.submit() 
         except:
-            click_element(driver, driver.find_element(By.ID, "continue-announce"))
+            click_amazon_button(driver, "continue")
         refresh_page(driver)
         if "ap/cvf" in driver.current_url or not handle_captcha(driver, email):
             logger.error(f"🚫 CAPTCHA sau email: {email}")
@@ -367,7 +417,7 @@ def check_login(driver, email, password):
             form_login = driver.find_element(By.CSS_SELECTOR, "form[name='signIn']")
             form_login.submit()
         except: 
-            click_element(driver, driver.find_element(By.ID, "signInSubmit"))
+            click_amazon_button(driver, "submit")
         refresh_page(driver)
         if "ap/cvf" in driver.current_url or not handle_captcha(driver, email):
             logger.error(f"🚫 CAPTCHA sau mật khẩu: {email}")
@@ -378,6 +428,7 @@ def check_login(driver, email, password):
         # traceback_str = traceback.format_exc()
         # logger.error(f"Chi tiết lỗi:\n{traceback_str}")
         return False, repr(e)
+
 
 def findElement(driver, selector, backup_selector=None):
             try:
