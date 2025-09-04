@@ -31,6 +31,7 @@ max_failed_account_creation = 0
 account_creation_lock = threading.Lock()
 def increment_failed_account_creation():
     global failed_account_creation_count, max_failed_account_creation
+    threading.current_thread().name = "Monitor"
     with account_creation_lock:
         failed_account_creation_count += 1
         logger.warning(f"⚠️ Số lỗi tạo tài khoản hiện tại: {failed_account_creation_count}/{max_failed_account_creation}")
@@ -331,24 +332,74 @@ def select_autocomplete(driver):
 def refresh_page(driver):
     driver.refresh()
     time.sleep(5)
+
+def click_by_id(driver, element_id, scroll_first=True):
+    """Click element by ID using document.querySelector"""
+    try:
+        if scroll_first:
+            driver.execute_script(f"document.querySelector('#{element_id}').scrollIntoView({{block: 'center'}});")
+            time.sleep(0.5)
+        driver.execute_script(f"document.querySelector('#{element_id}').click();")
+        return True
+    except Exception as e:
+        logger.warning(f"Failed to click element #{element_id}: {repr(e)}")
+        return False
+
+
+def click_by_selector(driver, selector, scroll_first=True):
+    """Click element by CSS selector using document.querySelector"""
+    try:
+        if scroll_first:
+            driver.execute_script(f"document.querySelector(arguments[0]).scrollIntoView({{block: 'center'}});", selector)
+            time.sleep(0.5)
+        driver.execute_script(f"document.querySelector(arguments[0]).click();", selector)
+        return True
+    except Exception as e:
+        logger.warning(f"Failed to click element {repr(e)}")
+        return False
+
+
+def click_amazon_button(driver, button_id):
+    """Click common Amazon buttons with fallback methods"""
+    amazon_buttons = {
+        "continue": ["#continue", "#continue-announce", "[name='continue']"],
+        "submit": ["#signInSubmit", "[type='submit']", ".a-button-input"],
+        "create_account": ["#createAccountSubmit", "#register_accordion_header"],
+        "verify": ["input[aria-label='Verify OTP Button']", "#cvf-submit-otp-button"],
+        "skip": ["#ap-account-fixup-phone-skip-link", ".a-link-normal"]
+    }
+    
+    if button_id in amazon_buttons:
+        selectors = amazon_buttons[button_id]
+        for selector in selectors:
+            if click_by_selector(driver, selector, scroll_first=True):
+                logger.info(f"Successfully clicked {button_id} using selector: {selector}")
+                return True
+        
+        logger.warning(f"Failed to click {button_id} with all selectors")
+        return False
+    else:
+        logger.error(f"Unknown Amazon button: {button_id}")
+        return False
+
 def check_login(driver, email, password):
     try:
         is_login = False
         try:
-            skip = driver.find_element(By.ID, "ap-account-fixup-phone-skip-link")       
-            click_element(driver, skip)
-            is_login = True
+            driver.find_element(By.ID, "ap-account-fixup-phone-skip-link")       
+            click_by_id(driver, "ap-account-fixup-phone-skip-link")
         except:
             pass
         wait = WebDriverWait(driver, 15)
         # Nhập email
         email_input = wait.until(EC.visibility_of_element_located((By.ID, "ap_email_login")))
         human_type(email_input, email)
+        is_login = True
         try:
             form_login = driver.find_element(By.CSS_SELECTOR, "form[name='signIn']")
             form_login.submit() 
         except:
-            click_element(driver, driver.find_element(By.ID, "continue-announce"))
+            click_amazon_button(driver, "continue")
         refresh_page(driver)
         if "ap/cvf" in driver.current_url or not handle_captcha(driver, email):
             logger.error(f"🚫 CAPTCHA sau email: {email}")
@@ -366,7 +417,7 @@ def check_login(driver, email, password):
             form_login = driver.find_element(By.CSS_SELECTOR, "form[name='signIn']")
             form_login.submit()
         except: 
-            click_element(driver, driver.find_element(By.ID, "signInSubmit"))
+            click_amazon_button(driver, "submit")
         refresh_page(driver)
         if "ap/cvf" in driver.current_url or not handle_captcha(driver, email):
             logger.error(f"🚫 CAPTCHA sau mật khẩu: {email}")
@@ -377,6 +428,7 @@ def check_login(driver, email, password):
         # traceback_str = traceback.format_exc()
         # logger.error(f"Chi tiết lỗi:\n{traceback_str}")
         return False, repr(e)
+
 
 def findElement(driver, selector, backup_selector=None):
             try:
@@ -450,6 +502,15 @@ def register_amazon(email, orderid, username, sdt, address, proxy, password, sho
                     time.sleep(10)
 
                     if "www.amazon.com/amazonprime" in start_link:
+                        try:
+                            form = wait.until(
+                                EC.presence_of_element_located((By.CSS_SELECTOR, 'form[action="/gp/prime/pipeline/membersignup"]'))
+                            )
+                            form.submit()
+                        except:
+                            driver.get("https://www.amazon.ca/ap/signin?openid.pape.max_auth_age=0&openid.return_to=https%3A%2F%2Fwww.amazon.ca%2Fhp%2Fwlp%2Fpipeline%2Fmembersignup%3FredirectURL%3DL2dwL3ByaW1l%26campaignId%3DSlashPrime%26locationID%3Dprime_confirm%26offerToken%3Damzn1.prime.offertoken.1.JPSoTnVjIiLCDkD8oAxb4h2Yybq99hQZbQ_IhLH4o71il2ZMbLrXlI6s4tgJkvZlR1bsxu-SITWQFA5g7zRKJPuePaNNAtY3Vs92fhpRizdq18268x3P3c0LZyWF9yQlTwhQH7xxGBXofP20pL0eWrMyJ5vFGYTOSfRUARsVjAz0wGz-oSkXFIjg3XGaLoJrOX4032G1NZabxqhqdSDQn7jhifNoBrPm3pq0gLcxtCuhK6FqmSgIBKfA8gKOWN-_XIMvgGcra_rx9m58Vu-1Hq6K8WU29iW4xx0LMr7UkhqzT4Y97CnnXSbMLNm2-PIhSjt84U_t3Itfzjs%26cancelRedirectURL%3DLw%26primeSignupFulfillmentType%3DAMAZON_WALLET%26containerRequestId%3Db23602b8-33cd-4333-bb47-708e0d712c26_f253b1be-d7af-4e2a-9cea-c4d7f20a482d%26originalContainerRequestId%3Db23602b8-33cd-4333-bb47-708e0d712c26_f253b1be-d7af-4e2a-9cea-c4d7f20a482d&openid.identity=http%3A%2F%2Fspecs.openid.net%2Fauth%2F2.0%2Fidentifier_select&openid.assoc_handle=amzn_wlpmember_android_ca&openid.mode=checkid_setup&language=en_CA&openid.claimed_id=http%3A%2F%2Fspecs.openid.net%2Fauth%2F2.0%2Fidentifier_select&openid.ns=http%3A%2F%2Fspecs.openid.net%2Fauth%2F2.0")
+                            time.sleep(10)
+                    elif "www.amazon.ca/amazonprime" in start_link:
                         form = wait.until(
                             EC.presence_of_element_located((By.CSS_SELECTOR, 'form[action="/gp/prime/pipeline/membersignup"]'))
                         )
@@ -530,10 +591,11 @@ def register_amazon(email, orderid, username, sdt, address, proxy, password, sho
                         except:
                             driver.get("https://www.amazon.com/ap/signin?openid.pape.max_auth_age=3600&openid.return_to=https%3A%2F%2Fluna.amazon.com%2F&openid.identity=http%3A%2F%2Fspecs.openid.net%2Fauth%2F2.0%2Fidentifier_select&openid.assoc_handle=tempo_us&openid.mode=checkid_setup&language=en_US&openid.claimed_id=http%3A%2F%2Fspecs.openid.net%2Fauth%2F2.0%2Fidentifier_select&openid.ns=http%3A%2F%2Fspecs.openid.net%2Fauth%2F2.0")
                         time.sleep(10)
-
-                    # Chọn Tạo tài khoản
-                    create_account_button = wait.until(EC.presence_of_element_located((By.ID, "register_accordion_header")))
-                    click_element(driver, create_account_button)
+                    
+                    if "www.shopbop.com/ap/register" not in start_link:   
+                        # Chọn Tạo tài khoản
+                        create_account_button = wait.until(EC.presence_of_element_located((By.ID, "register_accordion_header")))
+                        click_element(driver, create_account_button)
                     # Điền biểu mẫu đăng ký
                     name_field = wait.until(EC.presence_of_element_located((By.ID, "ap_customer_name")))
                     focus_input(driver, name_field)
@@ -597,24 +659,33 @@ def register_amazon(email, orderid, username, sdt, address, proxy, password, sho
             time.sleep(10)
         else: 
             time.sleep(5)
+        is_registered = True
         # Kiểm tra CAPTCHA lần nữa
         if not handle_captcha(driver, email):
             log_failed_account(email, "captcha.txt")
             return False
         time.sleep(5)
-        verify_phone  = find_element_by_text(driver, "h1", "Add mobile number")
-        if verify_phone:
-            logger.error(f"CẢNH BÁO: {email} dính sdt US")
-            return False
-        verify_phone_ca = find_element_by_text(driver, "h1", "Add cell number")
-        if verify_phone_ca:
-            logger.error(f"CẢNH BÁO: {email} dính sdt CA")
-            return False
-        if  driver.current_url.startswith("https://www.amazon.com/ap/cvf/verify"):
-            logger.error(f"CẢNH BÁO: {email} dính SDT sau khi nhập otp")
+        def check_phone_verification(driver, email):
+            """Check if account is blocked by phone verification and log appropriate message"""
+            try:
+                phone_verification_checks = [
+                    (lambda: driver.current_url.startswith("https://www.amazon.com/ap/cvf/verify"), "US"),
+                    (lambda: driver.current_url.startswith("https://www.amazon.ca/ap/accountfixup"), "CA")
+                ]
+                for check_func, region in phone_verification_checks:
+                    if check_func():
+                        logger.error(f"CẢNH BÁO: {email} dính sdt {region}")
+                        return False
+                
+                return True
+            except Exception as e:
+                logger.error(f"Lỗi khi kiểm tra phone verification cho {email}: {repr(e)}")
+                return True
+
+        # Replace the selection with:
+        if not check_phone_verification(driver, email):
             return False
         
-        is_registered = True
         # Điều hướng đến thiết lập 2FA
         time.sleep(5)
         driver.get("https://www.amazon.ca/ap/signin?openid.pape.max_auth_age=900&openid.return_to=https%3A%2F%2Fwww.amazon.ca%2Fap%2Fcnep%3Fie%3DUTF8%26orig_return_to%3Dhttps%253A%252F%252Fwww.amazon.ca%252Fyour-account%26openid.assoc_handle%3Dcaflex%26pageId%3Dcaflex&openid.identity=http%3A%2F%2Fspecs.openid.net%2Fauth%2F2.0%2Fidentifier_select&openid.assoc_handle=caflex&openid.mode=checkid_setup&openid.ns.pape=http%3A%2F%2Fspecs.openid.net%2Fextensions%2Fpape%2F1.0&openid.claimed_id=http%3A%2F%2Fspecs.openid.net%2Fauth%2F2.0%2Fidentifier_select&openid.ns=http%3A%2F%2Fspecs.openid.net%2Fauth%2F2.0")
@@ -622,7 +693,7 @@ def register_amazon(email, orderid, username, sdt, address, proxy, password, sho
         refresh_page(driver)
         status, error = check_login(driver, email, password)
         if error is not None and error == "NO PASSWORD INPUT":
-            logger.error(f"CẢNH BÁO: {email} dính sdt US sau khi nhập otp")
+            return False
         time.sleep(10)
         # ap-account-fixup-phone-skip-link
         try:
@@ -693,17 +764,13 @@ def register_amazon(email, orderid, username, sdt, address, proxy, password, sho
         if not handle_captcha(driver, email):
             log_failed_account(email, "captcha.txt")
             return False
-        input_otp()        
+        input_otp()
         time.sleep(5)
         # # Lưu tài khoản thành công
         save_account(email, password, backup_code)
         # logger.info(f" Đăng ký thành công {email}. Thực hiện click logo.")
         time.sleep(5)
         try:
-
-            logo_btn = driver.find_element(By.ID, "nav-hamburger-menu")
-            click_element(driver, logo_btn)
-            time.sleep(5)
             driver.get("https://www.amazon.ca/gp/bestsellers/?ref_=navm_em_bestsellers_0_1_1_2")
             time.sleep(5)
             links = driver.find_elements(By.CSS_SELECTOR, "a.a-link-normal")
@@ -728,7 +795,6 @@ def register_amazon(email, orderid, username, sdt, address, proxy, password, sho
             save_account(email, password, backup_code, "account_created.txt")
         # if not gemlogin.delete_profile(profile_id):
         #     logger.error(f"CẢNH BÁO: Không xóa được cấu hình {profile_id} cho {email}")
-
 
 
 def register_and_cleanup(i, email, orderid, username, sdt, address, proxy, password, api, address_2):

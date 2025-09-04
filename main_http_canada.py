@@ -502,6 +502,15 @@ def register_amazon(email, orderid, username, sdt, address, proxy, password, sho
                     time.sleep(10)
 
                     if "www.amazon.com/amazonprime" in start_link:
+                        try:
+                            form = wait.until(
+                                EC.presence_of_element_located((By.CSS_SELECTOR, 'form[action="/gp/prime/pipeline/membersignup"]'))
+                            )
+                            form.submit()
+                        except:
+                            driver.get("https://www.amazon.ca/ap/signin?openid.pape.max_auth_age=0&openid.return_to=https%3A%2F%2Fwww.amazon.ca%2Fhp%2Fwlp%2Fpipeline%2Fmembersignup%3FredirectURL%3DL2dwL3ByaW1l%26campaignId%3DSlashPrime%26locationID%3Dprime_confirm%26offerToken%3Damzn1.prime.offertoken.1.JPSoTnVjIiLCDkD8oAxb4h2Yybq99hQZbQ_IhLH4o71il2ZMbLrXlI6s4tgJkvZlR1bsxu-SITWQFA5g7zRKJPuePaNNAtY3Vs92fhpRizdq18268x3P3c0LZyWF9yQlTwhQH7xxGBXofP20pL0eWrMyJ5vFGYTOSfRUARsVjAz0wGz-oSkXFIjg3XGaLoJrOX4032G1NZabxqhqdSDQn7jhifNoBrPm3pq0gLcxtCuhK6FqmSgIBKfA8gKOWN-_XIMvgGcra_rx9m58Vu-1Hq6K8WU29iW4xx0LMr7UkhqzT4Y97CnnXSbMLNm2-PIhSjt84U_t3Itfzjs%26cancelRedirectURL%3DLw%26primeSignupFulfillmentType%3DAMAZON_WALLET%26containerRequestId%3Db23602b8-33cd-4333-bb47-708e0d712c26_f253b1be-d7af-4e2a-9cea-c4d7f20a482d%26originalContainerRequestId%3Db23602b8-33cd-4333-bb47-708e0d712c26_f253b1be-d7af-4e2a-9cea-c4d7f20a482d&openid.identity=http%3A%2F%2Fspecs.openid.net%2Fauth%2F2.0%2Fidentifier_select&openid.assoc_handle=amzn_wlpmember_android_ca&openid.mode=checkid_setup&language=en_CA&openid.claimed_id=http%3A%2F%2Fspecs.openid.net%2Fauth%2F2.0%2Fidentifier_select&openid.ns=http%3A%2F%2Fspecs.openid.net%2Fauth%2F2.0")
+                            time.sleep(10)
+                    elif "www.amazon.ca/amazonprime" in start_link:
                         form = wait.until(
                             EC.presence_of_element_located((By.CSS_SELECTOR, 'form[action="/gp/prime/pipeline/membersignup"]'))
                         )
@@ -582,10 +591,11 @@ def register_amazon(email, orderid, username, sdt, address, proxy, password, sho
                         except:
                             driver.get("https://www.amazon.com/ap/signin?openid.pape.max_auth_age=3600&openid.return_to=https%3A%2F%2Fluna.amazon.com%2F&openid.identity=http%3A%2F%2Fspecs.openid.net%2Fauth%2F2.0%2Fidentifier_select&openid.assoc_handle=tempo_us&openid.mode=checkid_setup&language=en_US&openid.claimed_id=http%3A%2F%2Fspecs.openid.net%2Fauth%2F2.0%2Fidentifier_select&openid.ns=http%3A%2F%2Fspecs.openid.net%2Fauth%2F2.0")
                         time.sleep(10)
-
-                    # Chọn Tạo tài khoản
-                    create_account_button = wait.until(EC.presence_of_element_located((By.ID, "register_accordion_header")))
-                    click_element(driver, create_account_button)
+                    
+                    if "www.shopbop.com/ap/register" not in start_link:   
+                        # Chọn Tạo tài khoản
+                        create_account_button = wait.until(EC.presence_of_element_located((By.ID, "register_accordion_header")))
+                        click_element(driver, create_account_button)
                     # Điền biểu mẫu đăng ký
                     name_field = wait.until(EC.presence_of_element_located((By.ID, "ap_customer_name")))
                     focus_input(driver, name_field)
@@ -649,6 +659,7 @@ def register_amazon(email, orderid, username, sdt, address, proxy, password, sho
             time.sleep(10)
         else: 
             time.sleep(5)
+        is_registered = True
         # Kiểm tra CAPTCHA lần nữa
         if not handle_captcha(driver, email):
             log_failed_account(email, "captcha.txt")
@@ -657,11 +668,7 @@ def register_amazon(email, orderid, username, sdt, address, proxy, password, sho
         def check_phone_verification(driver, email):
             """Check if account is blocked by phone verification and log appropriate message"""
             try:
-                
                 phone_verification_checks = [
-                    (lambda: find_element_by_text(driver, "h1", "Add mobile number"), "US"),
-                    (lambda: find_element_by_text(driver, "h1", "Add cell number"), "CA"),
-                    (lambda: findElement(driver, "#cvf_phone_number_label", None), "US"),
                     (lambda: driver.current_url.startswith("https://www.amazon.com/ap/cvf/verify"), "US"),
                     (lambda: driver.current_url.startswith("https://www.amazon.ca/ap/accountfixup"), "CA")
                 ]
@@ -679,7 +686,6 @@ def register_amazon(email, orderid, username, sdt, address, proxy, password, sho
         if not check_phone_verification(driver, email):
             return False
         
-        is_registered = True
         # Điều hướng đến thiết lập 2FA
         time.sleep(5)
         driver.get("https://www.amazon.ca/ap/signin?openid.pape.max_auth_age=900&openid.return_to=https%3A%2F%2Fwww.amazon.ca%2Fap%2Fcnep%3Fie%3DUTF8%26orig_return_to%3Dhttps%253A%252F%252Fwww.amazon.ca%252Fyour-account%26openid.assoc_handle%3Dcaflex%26pageId%3Dcaflex&openid.identity=http%3A%2F%2Fspecs.openid.net%2Fauth%2F2.0%2Fidentifier_select&openid.assoc_handle=caflex&openid.mode=checkid_setup&openid.ns.pape=http%3A%2F%2Fspecs.openid.net%2Fextensions%2Fpape%2F1.0&openid.claimed_id=http%3A%2F%2Fspecs.openid.net%2Fauth%2F2.0%2Fidentifier_select&openid.ns=http%3A%2F%2Fspecs.openid.net%2Fauth%2F2.0")
@@ -687,7 +693,7 @@ def register_amazon(email, orderid, username, sdt, address, proxy, password, sho
         refresh_page(driver)
         status, error = check_login(driver, email, password)
         if error is not None and error == "NO PASSWORD INPUT":
-            logger.error(f"CẢNH BÁO: {email} dính sdt US sau khi nhập otp")
+            return False
         time.sleep(10)
         # ap-account-fixup-phone-skip-link
         try:
