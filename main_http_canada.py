@@ -304,8 +304,8 @@ class StCloneAPI(EmailProviderAPI):
         """Get OTP code from StClone API"""
         try:
             otp_url = f"{self.base_url}/GmailOTPAPI.php"
-            # Use GET method with URL parameters for OTP retrieval
-            params = {
+            # Use POST method with JSON body for OTP retrieval
+            payload = {
                 "action": "get_otp",
                 "username": self.username,
                 "password": self.password,
@@ -313,7 +313,7 @@ class StCloneAPI(EmailProviderAPI):
             }
             
             for _ in range(15):  # Try up to 15 times, 5 seconds apart
-                response = self.session.get(otp_url, params=params)
+                response = self.session.post(otp_url, json=payload)
                 if response.status_code == 200:
                     data = response.json()
                     if data.get("status") == "success":
@@ -321,15 +321,45 @@ class StCloneAPI(EmailProviderAPI):
                         if otp:
                             logger.info(f"Lấy OTP thành công từ {self.name}: {otp}")
                             return otp
-                        elif data.get("data", {}).get("status") != "completed":
-                            # Continue trying if status is not completed yet
-                            pass
-                        else:
-                            # logger.warning(f"CẢNH BÁO: Lỗi OTP từ {self.name}: {data.get('msg')}")
-                            return None
+                        elif data.get("data", {}).get("expires_in") == 0:
+                            orderid = self._reorder_gmail(orderid)
+                            if orderid:
+                                return self.get_otp(orderid)
                 time.sleep(random.uniform(5, 15))
 
             logger.warning(f"CẢNH BÁO: Hết thời gian chờ OTP từ {self.name}")
+            return None
+        except Exception as e:
+            logger.error(f"CẢNH BÁO: Lỗi khi lấy OTP từ {self.name}: {str(e)}")
+            return None
+            
+    def _reorder_gmail(self, orderid):
+        """Reorder an expired Gmail to get a new OTP"""
+        try:
+            reorder_url = f"{self.base_url}/GmailOTPAPI.php"
+            payload = {
+                "action": "reorder",
+                "username": self.username,
+                "password": self.password,
+                "order_id": orderid
+            }
+            
+            response = self.session.post(reorder_url, json=payload)
+            if response.status_code == 200:
+                data = response.json()
+                if data.get("status") == "success":
+                    # Handle reorder response format
+                    new_orderid = data.get("data", {}).get("order_id")
+                    if new_orderid:
+                        return new_orderid
+            
+            logger.warning(f"CẢNH BÁO: Không thể reorder cho {orderid}: {response.status_code} - {response.text}")
+            return None
+        except Exception as e:
+            logger.error(f"CẢNH BÁO: Lỗi khi reorder cho {orderid}: {str(e)}")
+            return None
+        except Exception as e:
+            logger.error(f"CẢNH BÁO: Lỗi khi reorder cho {orderid}: {str(e)}")
             return None
         except Exception as e:
             logger.error(f"CẢNH BÁO: Lỗi khi lấy OTP từ {self.name}: {str(e)}")
