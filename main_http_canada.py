@@ -382,6 +382,17 @@ def click_amazon_button(driver, button_id):
         logger.error(f"Unknown Amazon button: {button_id}")
         return False
 
+def find_element_by_js(driver, selector, backup_selector):
+    try:
+        element = driver.execute_script(f"return document.querySelector('{selector}');")
+        if element:
+            return element
+        if backup_selector:
+            element = driver.execute_script(f"return document.querySelector('{backup_selector}');")
+            return element
+    except Exception:
+        pass
+    return None
 def check_login(driver, email, password):
     try:
         is_login = False
@@ -392,7 +403,11 @@ def check_login(driver, email, password):
             pass
         wait = WebDriverWait(driver, 15)
         # Nhập email
-        email_input = wait.until(EC.visibility_of_element_located((By.ID, "ap_email_login")))
+        try:
+            email_input = wait.until(EC.visibility_of_element_located((By.ID, "ap_email_login")))
+        except:
+            time.sleep(5)
+            email_input = find_element_by_js(driver, "input[type='email']", "#ap_email_login")
         human_type(email_input, email)
         is_login = True
         try:
@@ -662,6 +677,7 @@ def register_amazon(email, orderid, username, sdt, address, proxy, password, sho
         is_registered = True
         # Kiểm tra CAPTCHA lần nữa
         if not handle_captcha(driver, email):
+            is_registered = False
             log_failed_account(email, "captcha.txt")
             return False
         time.sleep(5)
@@ -684,6 +700,7 @@ def register_amazon(email, orderid, username, sdt, address, proxy, password, sho
 
         # Replace the selection with:
         if not check_phone_verification(driver, email):
+            is_registered = False
             return False
         
         # Điều hướng đến thiết lập 2FA
