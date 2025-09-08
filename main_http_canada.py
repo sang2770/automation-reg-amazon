@@ -139,12 +139,60 @@ class GemLoginAPI:
         # return False
         return True
 
+# Email Provider API Clients
+class EmailProviderAPI:
+    """Base class for all email provider APIs"""
+    def create_gmail_account(self):
+        raise NotImplementedError("Subclasses must implement create_gmail_account")
+    
+    def get_otp(self, orderid):
+        raise NotImplementedError("Subclasses must implement get_otp")
+
+# Email Provider Factory
+class EmailProviderFactory:
+    """Factory class to create email provider instances"""
+    @staticmethod
+    def create_provider(provider_info):
+        """Create an email provider instance based on configuration
+        Args:
+            provider_info: List containing provider configuration [name, auth_type, auth_value1, auth_value2, ...]
+        Returns:
+            An instance of EmailProviderAPI or None if configuration is invalid
+        """
+        if len(provider_info) < 3:
+            logger.warning(f"CẢNH BÁO: Định dạng nhà cung cấp không hợp lệ: {provider_info}")
+            return None
+            
+        name = provider_info[0].lower()
+        auth_type = provider_info[1].lower()
+        
+        if name == "shopgmail9999" and auth_type == "key":
+            # ShopGmail with API key
+            api_key = provider_info[2]
+            return ShopGmailAPI(api_key)
+            
+        elif name == "stclone" and auth_type == "auth":
+            # StClone with username/password
+            if len(provider_info) >= 4:
+                username = provider_info[2]
+                password = provider_info[3]
+                return StCloneAPI(username, password)
+            else:
+                logger.warning(f"CẢNH BÁO: Thiếu thông tin đăng nhập cho {name}")
+                return None
+        
+        # Add new provider types here
+        
+        logger.warning(f"CẢNH BÁO: Không hỗ trợ nhà cung cấp {name} với phương thức xác thực {auth_type}")
+        return None
+
 # ShopGmail9999 API client
-class ShopGmailAPI:
+class ShopGmailAPI(EmailProviderAPI):
     def __init__(self, apikey):
         self.base_url = "https://api.shopgmail9999.com/api/ApiV2"
         self.apikey = apikey
         self.session = requests.Session()
+        self.name = "ShopGmail9999"
 
     def create_gmail_account(self):
         # Tạo Gmail mới bằng API CreateOrder
@@ -161,13 +209,13 @@ class ShopGmailAPI:
                     email = data.get("data", {}).get("email")
                     orderid = data.get("data", {}).get("orderid")
                     if email and orderid:
-                        logger.info(f" Tạo Gmail thành công: {email}")
+                        logger.info(f" Tạo Gmail thành công từ {self.name}: {email}")
                         return email, orderid
-                    else:
-                        logger.warning("CẢNH BÁO: Không tìm thấy email hoặc orderid trong phản hồi API")
-                        return None, None
+                    # else:
+                    #     logger.warning(f"CẢNH BÁO: Không tìm thấy email hoặc orderid trong phản hồi API {self.name}")
+                    #     return None, None
                 else:
-                    logger.warning(f"CẢNH BÁO: Lỗi khi tạo Gmail: {data.get('msg')}")
+                    # logger.warning(f"CẢNH BÁO: Lỗi khi tạo Gmail từ {self.name}: {data.get('msg')}")
                     return None, None
             else:
                 # logger.warning(f"CẢNH BÁO: Lỗi khi gọi API CreateOrder: {response.status_code} - {response.text}.Tiến hành tạo lại..." )
@@ -185,24 +233,169 @@ class ShopGmailAPI:
             "getbody": False
         }
         try:
-            for _ in range(15):  # Thử tối đa 30 lần, cách nhau 5 giây
+            for _ in range(15):  # Thử tối đa 15 lần, cách nhau 5 giây
                 response = self.session.get(api_url, params=params)
                 if response.status_code == 200:
                     data = response.json()
                     if data.get("status") == "success" and data.get("data", {}).get("status") == "success":
                         otp = data.get("data", {}).get("otp")
                         if otp:
-                            logger.info(f" Lấy OTP thành công: {otp}")
+                            logger.info(f"Lấy OTP thành công từ {self.name}: {otp}")
                             return otp
                         elif data.get("data", {}).get("status") in ["error-token", "timeout"]:
-                            logger.warning(f"CẢNH BÁO: Lỗi OTP: {data.get('data', {}).get('status')}")
+                            logger.warning(f"CẢNH BÁO: Lỗi OTP từ {self.name}: {data.get('data', {}).get('status')}")
                             return None
-                time.sleep(5)  # Chờ 5 giây trước khi thử lại
-            logger.warning("CẢNH BÁO: Hết thời gian chờ OTP")
+                time.sleep(random.uniform(5, 15))  # Chờ ngẫu nhiên từ 5 đến 15 giây trước khi thử lại
+            logger.warning(f"CẢNH BÁO: Hết thời gian chờ OTP từ {self.name}")
             return None
         except Exception as e:
-            logger.error(f"CẢNH BÁO: Lỗi khi gọi API CheckOtp2: {str(e)}")
+            logger.error(f"CẢNH BÁO: Lỗi khi gọi API CheckOtp2 từ {self.name}: {str(e)}")
             return None
+
+# StClone API client
+class StCloneAPI(EmailProviderAPI):
+    def __init__(self, username, password):
+        self.base_url = "https://stclone.shop/api"
+        self.username = username
+        self.password = password
+        self.session = requests.Session()
+        self.name = "StClone"
+
+    def create_gmail_account(self):
+        """Create a new email account with StClone API"""
+        try:
+            order_url = f"{self.base_url}/GmailOTPAPI.php"
+            # Use POST method with JSON body
+            payload = {
+                "action": "buy_gmail",
+                "username": self.username,
+                "password": self.password,
+                "service_id": "amazon_reg",  # Service ID for Amazon registration
+                "amount": 1
+            }
+            
+            response = self.session.post(order_url, json=payload)
+            if response.status_code == 200:
+                data = response.json()
+                if data.get("status") == "success":
+                    # Handle the new response format
+                    orders = data.get("data", {}).get("orders", [])
+                    if orders and len(orders) > 0:
+                        order = orders[0]  # Get the first order
+                        email = order.get("gmail")
+                        orderid = order.get("order_id")
+                        if email and orderid:
+                            logger.info(f" Tạo Gmail thành công từ {self.name}: {email}")
+                            return email, orderid
+                        # else:
+                        #     logger.warning(f"CẢNH BÁO: Không tìm thấy email hoặc orderid trong phản hồi API {self.name}")
+                    # else:
+                    #     logger.warning(f"CẢNH BÁO: Không có đơn hàng trong phản hồi API {self.name}")
+                # else:
+                #     logger.warning(f"CẢNH BÁO: Lỗi khi tạo Gmail từ {self.name}: {data.get('msg')}")
+            # else:
+            #     logger.warning(f"CẢNH BÁO: Lỗi khi gọi API tạo Gmail từ {self.name}: {response.status_code} - {response.text}")
+            return None, None
+        except Exception as e:
+            # logger.error(f"CẢNH BÁO: Lỗi khi tạo Gmail từ {self.name}: {str(e)}")
+            return None, None
+
+    def get_otp(self, orderid):
+        """Get OTP code from StClone API"""
+        try:
+            otp_url = f"{self.base_url}/GmailOTPAPI.php"
+            # Use GET method with URL parameters for OTP retrieval
+            params = {
+                "action": "get_otp",
+                "username": self.username,
+                "password": self.password,
+                "order_id": orderid
+            }
+            
+            for _ in range(15):  # Try up to 15 times, 5 seconds apart
+                response = self.session.get(otp_url, params=params)
+                if response.status_code == 200:
+                    data = response.json()
+                    if data.get("status") == "success":
+                        otp = data.get("data", {}).get("otp")
+                        if otp:
+                            logger.info(f"Lấy OTP thành công từ {self.name}: {otp}")
+                            return otp
+                        elif data.get("data", {}).get("status") != "completed":
+                            # Continue trying if status is not completed yet
+                            pass
+                        else:
+                            # logger.warning(f"CẢNH BÁO: Lỗi OTP từ {self.name}: {data.get('msg')}")
+                            return None
+                time.sleep(random.uniform(5, 15))
+
+            logger.warning(f"CẢNH BÁO: Hết thời gian chờ OTP từ {self.name}")
+            return None
+        except Exception as e:
+            logger.error(f"CẢNH BÁO: Lỗi khi lấy OTP từ {self.name}: {str(e)}")
+            return None
+
+# Email Provider Manager to handle multiple API providers
+class EmailProviderManager:
+    def __init__(self):
+        self.providers = []
+        self.current_provider_index = 0
+        
+        # Load providers from apikey.txt in new format
+        email_providers = self._load_providers_from_file("apikey.txt")
+        
+        if email_providers:
+            for provider_info in email_providers:
+                provider = EmailProviderFactory.create_provider(provider_info)
+                if provider:
+                    self.providers.append(provider)
+                    logger.info(f" Đã khởi tạo nhà cung cấp {provider.name}")
+
+        if not self.providers:
+            logger.error("CẢNH BÁO: Không có nhà cung cấp email nào được cấu hình!")
+    
+    def _load_providers_from_file(self, file_path):
+        """Load providers from file in new format: name|auth_type|auth_value"""
+        providers = []
+        try:
+            with open(file_path, 'r', encoding='utf-8') as f:
+                for line in f:
+                    line = line.strip()
+                    if line:
+                        parts = line.split('|')
+                        providers.append(parts)
+            return providers
+        except FileNotFoundError:
+            logger.warning(f"CẢNH BÁO: Không tìm thấy tệp {file_path}.")
+            return []
+
+    def create_gmail_account(self):
+        """Try to create a Gmail account using available providers"""
+        start_index = self.current_provider_index
+        
+        while True:
+            if not self.providers:
+                logger.error("CẢNH BÁO: Không có nhà cung cấp email nào được cấu hình!")
+                return None, None, None
+            
+            provider = self.providers[self.current_provider_index]
+            # logger.info(f" Đang tạo Gmail với {provider.name}...")
+            
+            email, orderid = provider.create_gmail_account()
+            if email and orderid:
+                return email, orderid, provider
+            
+            # Switch to the next provider
+            self.current_provider_index = (self.current_provider_index + 1) % len(self.providers)
+            
+            # If we've tried all providers and come back to where we started, give up
+            if self.current_provider_index == start_index:
+                # logger.error("CẢNH BÁO: Đã thử tất cả các nhà cung cấp email nhưng không thành công!")
+                return None, None, None
+    
+    def get_otp(self, orderid, provider):
+        """Get OTP from the specified provider"""
+        return provider.get_otp(orderid)
 
 # Hàm kiểm tra CAPTCHA
 def handle_captcha(driver, email):
@@ -469,7 +662,7 @@ def find_element_by_text(driver, tag, text, case_insensitive=True):
     return None
 
 # Hàm đăng ký Amazon chính
-def register_amazon(email, orderid, username, sdt, address, proxy, password, shopgmail_api, address_2):
+def register_amazon(email, orderid, username, sdt, address, proxy, password, email_provider, address_2):
     gemlogin = GemLoginAPI()
 
     if not email or not orderid:
@@ -658,7 +851,7 @@ def register_amazon(email, orderid, username, sdt, address, proxy, password, sho
         otp_check = findElement(driver, "input[aria-label='Verify OTP Button']", "#verification-code-form")
         if otp_check:
             # Lấy OTP để xác minh Gmail
-            otp = shopgmail_api.get_otp(orderid)
+            otp = email_provider.get_otp(orderid)
             if not otp:
                 logger.error(f"CẢNH BÁO: Không lấy được OTP cho {email}")
                 log_failed_account(email, "captcha.txt")
@@ -731,9 +924,9 @@ def register_amazon(email, orderid, username, sdt, address, proxy, password, sho
             form_otp_check = findElement(driver, "#verification-code-form", "#input-box-otp")
             if form_otp_check:
                 otp_field_2fa = findElement(driver, "#input-box-otp", "form input")
-                otp_2fa = shopgmail_api.get_otp(orderid)
+                otp_2fa = email_provider.get_otp(orderid)
                 if not otp_2fa:
-                    logger.error(f"CẢNH BÁO: Không lý OTP 2FA cho {email}")
+                    logger.error(f"CẢNH BÁO: Không lấy OTP 2FA cho {email}")
                     log_failed_account(email, "captcha.txt")
                     return False
                 human_type(otp_field_2fa, otp_2fa)
@@ -913,7 +1106,7 @@ def check_pause():
     while pause_event.is_set():
         time.sleep(60)
 
-def worker(index, proxy, username, sdt, address, password, shopgmail_api, address_2):
+def worker(index, proxy, username, sdt, address, password, email_provider_manager, address_2):
     try:
         threading.current_thread().name = f"{index + 1}"
         check_pause()
@@ -922,15 +1115,16 @@ def worker(index, proxy, username, sdt, address, password, shopgmail_api, addres
             try:
                 # Kiểm tra pause event trong quá trình tạo Gmail
                 check_pause()
-                email, orderid = shopgmail_api.create_gmail_account()
-                if email and orderid:
+                email, orderid, provider = email_provider_manager.create_gmail_account()
+                if email and orderid and provider:
                     break
                 time.sleep(random.uniform(1, 3))
-            except Exception:
+            except Exception as e:
+                logger.error(f"Lỗi khi tạo Gmail: {repr(e)}")
                 time.sleep(random.uniform(1, 3))
 
         # Gọi hàm xử lý
-        register_and_cleanup(index, email, orderid, username, sdt, address, proxy, password, shopgmail_api, address_2)
+        register_and_cleanup(index, email, orderid, username, sdt, address, proxy, password, provider, address_2)
 
     except Exception as e:
         logger.error(f"Lỗi ở luồng {index}: {e}")
@@ -962,13 +1156,6 @@ def worker_from_queue(task_queue):
         task_queue.task_done()
 # Hàm chính
 def main():
-    # Nhập API key và số lượng tài khoản
-    logger.info(" Đang kiểm tra apikey api.shopgmail9999.com")
-    apikey = read_file("apikey.txt")
-    if not apikey:
-        logger.error("CẢNH BÁO: Không tìm thấy apikey. Vui lý nhập apikey.txt")
-        return
-    logger.info(f"API key: {apikey}")
     try:
         num_accounts = int(input("🔢 Nhập số tài khoản cần tạo: "))
         max_threads = int(input("⚙️ Nhập số luồng chạy mỗi lần: "))
@@ -978,8 +1165,14 @@ def main():
         logger.error("❌ Giá trị nhập vào không hợp lệ. Vui lòng nhập số nguyên.")
         return
     
-    # Khởi tạo ShopGmailAPI
-    shopgmail_api = ShopGmailAPI(apikey)
+    # Khởi tạo EmailProviderManager
+    email_provider_manager = EmailProviderManager()
+    
+    if len(email_provider_manager.providers) == 0:
+        logger.error("❌ Không tìm thấy cấu hình nhà cung cấp email nào. Vui lòng kiểm tra apikey.txt")
+        return
+    
+    logger.info(f"✅ Tìm thấy {len(email_provider_manager.providers)} nhà cung cấp email:")
     
     # Tải tệp đầu vào
     usernames = read_file("username.txt")
@@ -1013,7 +1206,7 @@ def main():
             proxy = proxies[i % len(proxies)].strip() if proxies else ""
             # random address_2 != i
             address_2 = addresses[i + 1] if i + 1 < len(addresses) else addresses[0]
-            task_queue.put((worker, (i, proxy, usernames[i], sdts[i], addresses[i], passwords[i], shopgmail_api, address_2)))
+            task_queue.put((worker, (i, proxy, usernames[i], sdts[i], addresses[i], passwords[i], email_provider_manager, address_2)))
             time.sleep(1)
 
         while not task_queue.empty() and not stop_event.is_set():
