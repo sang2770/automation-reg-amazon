@@ -147,6 +147,9 @@ class EmailProviderAPI:
     def get_otp(self, orderid):
         raise NotImplementedError("Subclasses must implement get_otp")
 
+    def reorder_gmail(self, orderid):
+        raise NotImplementedError("Subclasses must implement reorder_gmail")
+
 # Email Provider Factory
 class EmailProviderFactory:
     """Factory class to create email provider instances"""
@@ -251,6 +254,9 @@ class ShopGmailAPI(EmailProviderAPI):
             logger.error(f"CẢNH BÁO: Lỗi khi gọi API CheckOtp2 từ {self.name}: {str(e)}")
             return None
 
+    def reorder_gmail(self, orderid):
+        return None
+
 # StClone API client
 class StCloneAPI(EmailProviderAPI):
     def __init__(self, username, password):
@@ -320,10 +326,6 @@ class StCloneAPI(EmailProviderAPI):
                         if otp:
                             logger.info(f"Lấy OTP thành công từ {self.name}: {otp}")
                             return otp
-                        elif data.get("data", {}).get("expires_in") == 0:
-                            new_order_id = self._reorder_gmail(orderid)
-                            if new_order_id:
-                                return self.get_otp(new_order_id)
                     else:
                         logger.warning(f"CẢNH BÁO: Không thể lấy OTP từ {self.name}: {data.get('msg')}")
                 time.sleep(random.uniform(5, 15))
@@ -334,8 +336,21 @@ class StCloneAPI(EmailProviderAPI):
             logger.error(f"CẢNH BÁO: Lỗi khi lấy OTP từ {self.name}: {str(e)}")
             return None
             
-    def _reorder_gmail(self, orderid):
+    def reorder_gmail(self, orderid):
         """Reorder an expired Gmail to get a new OTP with retry logic"""
+        otp_url = f"{self.base_url}/GmailOTPAPI.php"
+        # Use POST method with JSON body for OTP retrieval
+        payload = {
+                "action": "get_otp",
+                "username": self.username,
+                "password": self.password,
+                "order_id": orderid
+        }
+        response = self.session.post(otp_url, json=payload)
+        if response.status_code == 200:
+            data = response.json()
+            if data.get("data", {}).get("expires_in") >= 30:
+                return None
         max_retries = 100
         attempt = 1
         while attempt <= max_retries:
@@ -451,9 +466,9 @@ def human_type(element, text):
     for i, char in enumerate(text):  # ✅ SỬA chỗ này
         element.send_keys(char)
         if i % random.randint(3, 7) == 0:
-            time.sleep(random.uniform(0.5, 1.0))  # Nghỉ lâu hơn
+            time.sleep(random.uniform(0.7, 1.0))  # Nghỉ lâu hơn
         else:
-            time.sleep(random.uniform(0.2, 0.4))  # Gõ chậm hơn bình thường
+            time.sleep(random.uniform(0.3, 0.6))  # Gõ chậm hơn bình thường
     time.sleep(3)
 
 # Hàm đọc dòng từ tệp
@@ -764,7 +779,7 @@ def register_amazon(email, orderid, username, sdt, address, proxy, password, ema
                             # sign_up_btn.click()
                             click_element(driver, sign_up_btn)
                         else:
-                            logger.error(f"Không tìm thấy button Sign up")
+                            # logger.error(f"Không tìm thấy button Sign up")
                             max_retry -= 1
                             continue
                     elif "sellercentral.amazon.ca" in start_link:
@@ -773,7 +788,7 @@ def register_amazon(email, orderid, username, sdt, address, proxy, password, ema
                         if sign_up_btn:
                             click_element(driver, sign_up_btn)
                         else:
-                            logger.error(f"Không tìm thấy button Sign up")
+                            # logger.error(f"Không tìm thấy button Sign up")
                             max_retry -= 1
                     elif "woot.com" in start_link:
                         time.sleep(10)
@@ -847,8 +862,7 @@ def register_amazon(email, orderid, username, sdt, address, proxy, password, ema
                     # password = ''.join(random.choices(string.ascii_letters + string.digits, k=12))
                     # password = "123456aA@Sang"
                     password_field = driver.find_element(By.ID, "ap_password")
-                    click_element(driver, password_field)
-                    time.sleep(3)
+                    focus_input(driver, password_field)
                     human_type(password_field, password)
 
                     try:
@@ -925,7 +939,12 @@ def register_amazon(email, orderid, username, sdt, address, proxy, password, ema
         if not check_phone_verification(driver, email):
             is_registered = False
             return False
-        
+        def refresh_gmail():
+            nonlocal orderid
+            new_order_id = email_provider.reorder_gmail(orderid)
+            if new_order_id:
+                orderid = new_order_id
+        refresh_gmail()
         # Điều hướng đến thiết lập 2FA
         time.sleep(5)
         driver.get("https://www.amazon.ca/ap/signin?openid.pape.max_auth_age=900&openid.return_to=https%3A%2F%2Fwww.amazon.ca%2Fap%2Fcnep%3Fie%3DUTF8%26orig_return_to%3Dhttps%253A%252F%252Fwww.amazon.ca%252Fyour-account%26openid.assoc_handle%3Dcaflex%26pageId%3Dcaflex&openid.identity=http%3A%2F%2Fspecs.openid.net%2Fauth%2F2.0%2Fidentifier_select&openid.assoc_handle=caflex&openid.mode=checkid_setup&openid.ns.pape=http%3A%2F%2Fspecs.openid.net%2Fextensions%2Fpape%2F1.0&openid.claimed_id=http%3A%2F%2Fspecs.openid.net%2Fauth%2F2.0%2Fidentifier_select&openid.ns=http%3A%2F%2Fspecs.openid.net%2Fauth%2F2.0")
@@ -950,7 +969,9 @@ def register_amazon(email, orderid, username, sdt, address, proxy, password, ema
             click_element(driver, skip)
         except:
             refresh_page(driver)
+        is_break_otp = False
         def input_otp():
+            nonlocal is_break_otp
             form_otp_check = findElement(driver, "#verification-code-form", "#input-box-otp")
             if form_otp_check:
                 otp_field_2fa = findElement(driver, "#input-box-otp", "form input")
@@ -962,6 +983,12 @@ def register_amazon(email, orderid, username, sdt, address, proxy, password, ema
                 human_type(otp_field_2fa, otp_2fa)
                 formConfirm = wait.until(EC.presence_of_element_located((By.ID, "verification-code-form")))
                 formConfirm.submit()
+            time.sleep(10)
+            # invalid-otp-code-message
+            invalid_otp = findElement(driver, "#invalid-otp-code-message")
+            if invalid_otp is not None:
+                is_break_otp = True
+                return False
             # Confirm button enable-mfa-form-submit
             try: 
                 enable_chechbox = wait.until(EC.presence_of_element_located((By.NAME, "trustThisDevice")))
@@ -971,6 +998,8 @@ def register_amazon(email, orderid, username, sdt, address, proxy, password, ema
             except:
                 pass
         input_otp()
+        if is_break_otp:
+            return False
         # Kiểm tra CAPTCHA lần nữa
         if not handle_captcha(driver, email):
             log_failed_account(email, "captcha.txt")
@@ -989,6 +1018,8 @@ def register_amazon(email, orderid, username, sdt, address, proxy, password, ema
             log_failed_account(email, "captcha.txt")
             return False
         
+        refresh_gmail()
+        
         otp_field_2fa = wait.until(EC.presence_of_element_located((By.ID, "ch-auth-app-code-input")))
         human_type(otp_field_2fa, otp_2fa)
         formConfirm =  wait.until(EC.presence_of_element_located((By.ID, "sia-add-auth-app-form")))
@@ -1000,11 +1031,15 @@ def register_amazon(email, orderid, username, sdt, address, proxy, password, ema
             log_failed_account(email, "captcha.txt")
             return False
         input_otp()
+        if is_break_otp:
+            return False
         # Kiểm tra CAPTCHA lần nữa
         if not handle_captcha(driver, email):
             log_failed_account(email, "captcha.txt")
             return False
         input_otp()
+        if is_break_otp:
+            return False
         time.sleep(5)
         driver.get("https://www.amazon.ca/ax/account/manage")
         time.sleep(10)
