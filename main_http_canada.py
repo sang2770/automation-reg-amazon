@@ -37,16 +37,15 @@ def increment_failed_account_creation():
         logger.warning(f"⚠️ Số lỗi tạo tài khoản hiện tại: {failed_account_creation_count}/{max_failed_account_creation}")
         
         if failed_account_creation_count >= max_failed_account_creation:
-            logger.warning(f"🛑 Đã đạt tới số lỗi tối đa ({max_failed_account_creation}). Tạm dừng tất cả luồng trong 1 giờ...")
+            logger.warning(f"🛑 Đã đạt tới số lỗi tối đa ({max_failed_account_creation}). Tạm dừng tất cả luồng trong 1 giờ 30 phút ...")
             pause_event.set()
             
-            # Tạo thread riêng để chờ 1 giờ và reset
             def wait_and_resume():
-                time.sleep(3600)  # Chờ 1 giờ (3600 giây)
+                time.sleep(5400)  # Chờ 1 giờ 30 phút (5400 giây)
                 global failed_account_creation_count
                 with account_creation_lock:
                     failed_account_creation_count = 0
-                    logger.info("✅ Đã chờ đủ 1 giờ. Tiếp tục tạo tài khoản...")
+                    logger.info("✅ Đã chờ đủ 1 giờ 30 phút. Tiếp tục tạo tài khoản...")
                     pause_event.clear()
             
             threading.Thread(target=wait_and_resume, daemon=True).start()
@@ -902,7 +901,6 @@ def register_amazon(email, orderid, username, sdt, address, proxy, password, ema
         is_registered = True
         # Kiểm tra CAPTCHA lần nữa
         if not handle_captcha(driver, email):
-            is_registered = False
             log_failed_account(email, "captcha.txt")
             return False
         time.sleep(5)
@@ -1192,7 +1190,7 @@ def main():
         num_accounts = int(input("🔢 Nhập số tài khoản cần tạo: "))
         max_threads = int(input("⚙️ Nhập số luồng chạy mỗi lần: "))
         global max_failed_account_creation
-        max_failed_account_creation = int(input("🚫 Nhập số lỗi tối đa trước khi tạm dừng 1 giờ: "))
+        max_failed_account_creation = int(input("🚫 Nhập số lỗi tối đa trước khi tạm dừng 1 giờ 30 phút: "))
     except ValueError:
         logger.error("❌ Giá trị nhập vào không hợp lệ. Vui lòng nhập số nguyên.")
         return
@@ -1220,7 +1218,7 @@ def main():
         return
     max_threads = min(max_threads, min_length)
     logger.info(f"🔧 Sẽ xử lý {min_length} tài khoản với {max_threads} luồng")
-    logger.info(f"🚫 Sẽ tạm dừng 1 giờ khi đạt {max_failed_account_creation} lỗi tạo tài khoản")
+    logger.info(f"🚫 Sẽ tạm dừng 1 giờ 30 phút khi đạt {max_failed_account_creation} lỗi tạo tài khoản")
     logger.info("💡 Nhấn phím 'x' rồi Enter để dừng việc tạo tài khoản mới, nhưng vẫn để các luồng đang chạy hoàn tất.")
 
     task_queue = Queue()
