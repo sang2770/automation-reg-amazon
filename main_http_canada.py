@@ -149,6 +149,9 @@ class EmailProviderAPI:
 
     def reorder_gmail(self, orderid):
         raise NotImplementedError("Subclasses must implement reorder_gmail")
+    
+    def get_name(self):
+        raise NotImplementedError("Subclasses must implement get_name")
 
 # Email Provider Factory
 class EmailProviderFactory:
@@ -196,6 +199,9 @@ class ShopGmailAPI(EmailProviderAPI):
         self.session = requests.Session()
         self.name = "ShopGmail9999"
 
+    def get_name(self):
+        return self.name
+    
     def create_gmail_account(self):
         # Tạo Gmail mới bằng API CreateOrder
         api_url = f"{self.base_url}/CreateOrder"
@@ -266,6 +272,9 @@ class StCloneAPI(EmailProviderAPI):
         self.session = requests.Session()
         self.name = "StClone"
 
+    def get_name(self):
+        return self.name
+
     def create_gmail_account(self):
         """Create a new email account with StClone API"""
         try:
@@ -326,8 +335,6 @@ class StCloneAPI(EmailProviderAPI):
                         if otp:
                             logger.info(f"Lấy OTP thành công từ {self.name}: {otp}")
                             return otp
-                    else:
-                        logger.warning(f"CẢNH BÁO: Không thể lấy OTP từ {self.name}: {data.get('msg')}")
                 time.sleep(random.uniform(5, 15))
 
             logger.warning(f"CẢNH BÁO: Hết thời gian chờ OTP từ {self.name}")
@@ -349,7 +356,8 @@ class StCloneAPI(EmailProviderAPI):
         response = self.session.post(otp_url, json=payload)
         if response.status_code == 200:
             data = response.json()
-            if data.get("data", {}).get("expires_in") >= 30:
+            expires_in = data.get("data", {}).get("expires_in")
+            if (expires_in is not None and expires_in >= 30) or (expires_in is None):
                 return None
         max_retries = 100
         attempt = 1
@@ -753,6 +761,8 @@ def register_amazon(email, orderid, username, sdt, address, proxy, password, ema
                         logger.error(f"Phiên làm việc gemLogin đã chết hoặc chưa được khởi tạo với {email}")
                         return False
                     driver.get(start_link)
+                    time.sleep(5)
+                    driver.refresh()
                     time.sleep(10)
 
                     if "www.amazon.com/amazonprime" in start_link:
@@ -762,13 +772,18 @@ def register_amazon(email, orderid, username, sdt, address, proxy, password, ema
                             )
                             form.submit()
                         except:
-                            driver.get("https://www.amazon.ca/ap/signin?openid.pape.max_auth_age=0&openid.return_to=https%3A%2F%2Fwww.amazon.ca%2Fhp%2Fwlp%2Fpipeline%2Fmembersignup%3FredirectURL%3DL2dwL3ByaW1l%26campaignId%3DSlashPrime%26locationID%3Dprime_confirm%26offerToken%3Damzn1.prime.offertoken.1.JPSoTnVjIiLCDkD8oAxb4h2Yybq99hQZbQ_IhLH4o71il2ZMbLrXlI6s4tgJkvZlR1bsxu-SITWQFA5g7zRKJPuePaNNAtY3Vs92fhpRizdq18268x3P3c0LZyWF9yQlTwhQH7xxGBXofP20pL0eWrMyJ5vFGYTOSfRUARsVjAz0wGz-oSkXFIjg3XGaLoJrOX4032G1NZabxqhqdSDQn7jhifNoBrPm3pq0gLcxtCuhK6FqmSgIBKfA8gKOWN-_XIMvgGcra_rx9m58Vu-1Hq6K8WU29iW4xx0LMr7UkhqzT4Y97CnnXSbMLNm2-PIhSjt84U_t3Itfzjs%26cancelRedirectURL%3DLw%26primeSignupFulfillmentType%3DAMAZON_WALLET%26containerRequestId%3Db23602b8-33cd-4333-bb47-708e0d712c26_f253b1be-d7af-4e2a-9cea-c4d7f20a482d%26originalContainerRequestId%3Db23602b8-33cd-4333-bb47-708e0d712c26_f253b1be-d7af-4e2a-9cea-c4d7f20a482d&openid.identity=http%3A%2F%2Fspecs.openid.net%2Fauth%2F2.0%2Fidentifier_select&openid.assoc_handle=amzn_wlpmember_android_ca&openid.mode=checkid_setup&language=en_CA&openid.claimed_id=http%3A%2F%2Fspecs.openid.net%2Fauth%2F2.0%2Fidentifier_select&openid.ns=http%3A%2F%2Fspecs.openid.net%2Fauth%2F2.0")
+                            driver.get("https://www.amazon.com/ap/signin?openid.pape.max_auth_age=0&openid.return_to=https%3A%2F%2Fwww.amazon.com%2Fhp%2Fwlp%2Fpipeline%2Fmembersignup%3FcampaignId%3DSlashPrime%26offerToken%3Damzn1.prime.offertoken.1.RMkdyOY7soZ83wOk_npq_wfsTNaJD7nsW7JbyjbI0gaQ4Q7NMXzFEXSiDQiPgFcolYXkNpbwZfh8nAd-0jrIxhvH6r0BLTdpx3BJojNEMvC52QW_IBcXJK4wedIEWZvi7I54bm9WArt7f-c9pSTGeFBb6Rtb8SQTFKz6CvU6hA_BuVdMjq31dAE9NPrQhKpZxVLl_L8Y1FwgcTPrTR14EDRqftIPJJSSp6RG5crOF_2iL6B_2qxt_u4vJ_13cWsWHx1k8c2--fY7Qs9jFWL_2NqXi-vQfKwYJCvAgCAfDzLSaGJV8U8B_LzMkCVzWPsiF9lEvMYjQ0b3noY%26redirectURL%3DL2dwL3ByaW1l%26locationID%3Dprime_confirm%26cancelRedirectURL%3DLw%26containerRequestId%3Dab29692a-b39e-4cc2-a429-d7e1dde1df24_7ac7c074-4ad6-40c9-a357-0d38d65a4c22%26originalContainerRequestId%3Dab29692a-b39e-4cc2-a429-d7e1dde1df24_7ac7c074-4ad6-40c9-a357-0d38d65a4c22%26primeSignupFulfillmentType%3DAMAZON_WALLET&openid.identity=http%3A%2F%2Fspecs.openid.net%2Fauth%2F2.0%2Fidentifier_select&openid.assoc_handle=amzn_wlpmember_us&openid.mode=checkid_setup&language=en_US&openid.claimed_id=http%3A%2F%2Fspecs.openid.net%2Fauth%2F2.0%2Fidentifier_select&openid.ns=http%3A%2F%2Fspecs.openid.net%2Fauth%2F2.0")
                             time.sleep(10)
                     elif "www.amazon.ca/amazonprime" in start_link:
-                        form = wait.until(
-                            EC.presence_of_element_located((By.CSS_SELECTOR, 'form[action="/gp/prime/pipeline/membersignup"]'))
-                        )
-                        form.submit()
+                        try:
+                            form = wait.until(
+                                EC.presence_of_element_located((By.CSS_SELECTOR, 'form[action="/gp/prime/pipeline/membersignup"]'))
+                            )
+                            form.submit()
+                        except:
+                            driver.get("https://www.amazon.ca/ap/signin?openid.pape.max_auth_age=0&openid.return_to=https%3A%2F%2Fwww.amazon.ca%2Fhp%2Fwlp%2Fpipeline%2Fmembersignup%3FcampaignId%3DSlashPrime%26offerToken%3Damzn1.prime.offertoken.1.JOIF2lt_3lMe14RTZuKduVbtoozunA7-bloYq3sQyLhU4GZLyobLUIazqVq5CQf4Df9quDwG47LnJmVOXee5bkiwK2xJQfGaRVoWM_eRquHVzOuGpolwZOu4t5Qoid9lCPE4cnT4H3zFSTD8Jm-k_HKYy-kvi-LeeLpshT6vTMWchdgtV46ZvcuUqTYPTV-ShVltHpREBlS8jal0uicauS2mJZ_7EahviB422BkoS4qNf5gyJ6MmgtkieODyL_nc4uSnQSQlNm3MEeK6lMYZORSxuSvse1firR5JaVQpN1BewxYibvtqeKko8YUJ6ihleSProzrNnxjMfw8%26redirectURL%3DL2dwL3ByaW1l%26locationID%3Dprime_confirm%26cancelRedirectURL%3DLw%26containerRequestId%3D62bf3862-507a-4b76-bfb7-03f365cab6c9_33aef6b3-2cfc-43d8-a2c4-0c18fb4af415%26originalContainerRequestId%3D62bf3862-507a-4b76-bfb7-03f365cab6c9_33aef6b3-2cfc-43d8-a2c4-0c18fb4af415%26primeSignupFulfillmentType%3DAMAZON_WALLET&openid.identity=http%3A%2F%2Fspecs.openid.net%2Fauth%2F2.0%2Fidentifier_select&openid.assoc_handle=amzn_wlpmember_ca&openid.mode=checkid_setup&language=en_CA&openid.claimed_id=http%3A%2F%2Fspecs.openid.net%2Fauth%2F2.0%2Fidentifier_select&openid.ns=http%3A%2F%2Fspecs.openid.net%2Fauth%2F2.0")
+                            time.sleep(10)
+                        
                     elif "audible.com" in start_link:
                         driver.get("https://www.amazon.com/ap/signin?clientContext=135-4992534-7011834&openid.pape.max_auth_age=900&openid.return_to=https%3A%2F%2Fwww.audible.com%2F%3FloginAttempt%3Dtrue&openid.identity=http%3A%2F%2Fspecs.openid.net%2Fauth%2F2.0%2Fidentifier_select&openid.assoc_handle=audible_experiment_shared_web_us&openid.mode=checkid_setup&siteState=audibleid.userType%3Damzn%2Caudibleid.mode%3Did_res&marketPlaceId=AF2M0KC94RCEA&language=en_US&openid.claimed_id=http%3A%2F%2Fspecs.openid.net%2Fauth%2F2.0%2Fidentifier_select&pageId=amzn_audible_bc_us&openid.ns=http%3A%2F%2Fspecs.openid.net%2Fauth%2F2.0")
                         time.sleep(10)
@@ -939,12 +954,15 @@ def register_amazon(email, orderid, username, sdt, address, proxy, password, ema
         if not check_phone_verification(driver, email):
             is_registered = False
             return False
-        def refresh_gmail():
-            nonlocal orderid
-            new_order_id = email_provider.reorder_gmail(orderid)
-            if new_order_id:
-                orderid = new_order_id
-        refresh_gmail()
+        if email_provider.get_name() == "StClone":
+            save_account(email, password, backup_code)
+            return True
+        # def refresh_gmail():
+        #     nonlocal orderid
+        #     new_order_id = email_provider.reorder_gmail(orderid)
+        #     if new_order_id:
+        #         orderid = new_order_id
+        # refresh_gmail()
         # Điều hướng đến thiết lập 2FA
         time.sleep(5)
         driver.get("https://www.amazon.ca/ap/signin?openid.pape.max_auth_age=900&openid.return_to=https%3A%2F%2Fwww.amazon.ca%2Fap%2Fcnep%3Fie%3DUTF8%26orig_return_to%3Dhttps%253A%252F%252Fwww.amazon.ca%252Fyour-account%26openid.assoc_handle%3Dcaflex%26pageId%3Dcaflex&openid.identity=http%3A%2F%2Fspecs.openid.net%2Fauth%2F2.0%2Fidentifier_select&openid.assoc_handle=caflex&openid.mode=checkid_setup&openid.ns.pape=http%3A%2F%2Fspecs.openid.net%2Fextensions%2Fpape%2F1.0&openid.claimed_id=http%3A%2F%2Fspecs.openid.net%2Fauth%2F2.0%2Fidentifier_select&openid.ns=http%3A%2F%2Fspecs.openid.net%2Fauth%2F2.0")
@@ -971,6 +989,7 @@ def register_amazon(email, orderid, username, sdt, address, proxy, password, ema
             refresh_page(driver)
         is_break_otp = False
         def input_otp():
+            nonlocal backup_code
             nonlocal is_break_otp
             form_otp_check = findElement(driver, "#verification-code-form", "#input-box-otp")
             if form_otp_check:
@@ -988,6 +1007,7 @@ def register_amazon(email, orderid, username, sdt, address, proxy, password, ema
             invalid_otp = findElement(driver, "#invalid-otp-code-message")
             if invalid_otp is not None:
                 is_break_otp = True
+                backup_code = ""
                 return False
             # Confirm button enable-mfa-form-submit
             try: 
@@ -1018,7 +1038,7 @@ def register_amazon(email, orderid, username, sdt, address, proxy, password, ema
             log_failed_account(email, "captcha.txt")
             return False
         
-        refresh_gmail()
+        # refresh_gmail()
         
         otp_field_2fa = wait.until(EC.presence_of_element_located((By.ID, "ch-auth-app-code-input")))
         human_type(otp_field_2fa, otp_2fa)
